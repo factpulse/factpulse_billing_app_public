@@ -4,5 +4,5 @@
 <rect rx="3" width="83" height="20" fill="url(#a)"/>
 <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-size="11">
 <text x="26" y="15" fill="#010101" fill-opacity=".3">django</text><text x="26" y="14">django</text>
-<text x="67" y="15" fill="#010101" fill-opacity=".3">5.1</text><text x="67" y="14">5.1</text>
+<text x="67" y="15" fill="#010101" fill-opacity=".3">5.2</text><text x="67" y="14">5.2</text>
 </g></svg>
