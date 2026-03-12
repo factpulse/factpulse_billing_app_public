@@ -1,0 +1,41 @@
+<table>
+    <thead>
+        <tr>
+            <th>Nom</th>
+            <th>SIREN</th>
+            <th>Email</th>
+            <th>ID externe</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for c in customers %}
+            <tr {% if c.archived %}class="row-archived"{% endif %}>
+                <td>{{ c.name }}</td>
+                <td>{{ c.siren|default:"—" }}</td>
+                <td>{{ c.email|default:"—" }}</td>
+                <td>{{ c.external_id|default:"—" }}</td>
+                <td class="actions-cell">
+                    <a href="{% url 'ui:customer_edit' uuid=c.uuid %}" class="btn-sm">Modifier</a>
+                    <form method="post"
+                          action="{% url 'ui:customer_archive' uuid=c.uuid %}"
+                          class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-sm secondary">
+                            {% if c.archived %}
+                                Restaurer
+                            {% else %}
+                                Archiver
+                            {% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="5" class="empty-row">Aucun client</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% include "ui/partials/_pagination.html" %}

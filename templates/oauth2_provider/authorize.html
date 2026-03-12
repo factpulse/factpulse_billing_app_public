@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}
+    Autorisation — FactPulse
+{% endblock title %}
+{% block content_anonymous %}
+    <div class="login-container">
+        <h1 class="login-title">Autorisation</h1>
+        <div class="section-box">
+            <p>
+                <strong class="text-cyan">{{ application.name }}</strong> souhaite accéder
+                à vos données de facturation via MCP.
+            </p>
+            <p class="text-muted">Permissions demandées :</p>
+            <ul>
+                <li>Gestion des factures, clients, produits et fournisseurs</li>
+                <li>Consultation du tableau de bord et des statistiques</li>
+                <li>Recherche dans l'annuaire SIRENE</li>
+            </ul>
+            <form method="post">
+                {% csrf_token %}
+                {% for field in form %}
+                    {% if field.is_hidden %}{{ field }}{% endif %}
+                {% endfor %}
+                <div class="form-actions">
+                    <button type="submit" name="allow" value="true" class="login-btn">Autoriser</button>
+                    <button type="submit" name="allow" value="false" class="login-btn secondary">Refuser</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock content_anonymous %}
+{% block content %}
+    <div class="form-narrow">
+        <div class="topbar">
+            <h1>Autoriser l'accès</h1>
+        </div>
+        <div class="section-box">
+            <p>
+                <strong class="text-cyan">{{ application.name }}</strong> souhaite accéder
+                à vos données de facturation via MCP.
+            </p>
+            <p class="text-muted">Permissions demandées :</p>
+            <ul>
+                <li>Gestion des factures, clients, produits et fournisseurs</li>
+                <li>Consultation du tableau de bord et des statistiques</li>
+                <li>Recherche dans l'annuaire SIRENE</li>
+            </ul>
+            <form method="post">
+                {% csrf_token %}
+                {% for field in form %}
+                    {% if field.is_hidden %}{{ field }}{% endif %}
+                {% endfor %}
+                <div class="form-actions">
+                    <button type="submit" name="allow" value="true">Autoriser</button>
+                    <button type="submit" name="allow" value="false" class="secondary">Refuser</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock content %}

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}
+    Tableau de bord — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Tableau de bord</h1>
+        <a href="{% url 'ui:invoice_create' %}" role="button">Nouvelle facture</a>
+    </div>
+    <div class="stats-grid">
+        <a href="{% url 'ui:invoice_list' %}" class="stat-card">
+            <div class="stat-label">Total factures</div>
+            <div class="stat-value">{{ stats.total_count|default:"0" }}</div>
+        </a>
+        <a href="{% url 'ui:invoice_list' %}?status=draft" class="stat-card">
+            <div class="stat-label">Brouillons</div>
+            <div class="stat-value">{{ stats.draft_count|default:"0" }}</div>
+        </a>
+        <a href="{% url 'ui:invoice_list' %}?status=validated" class="stat-card">
+            <div class="stat-label">Validées</div>
+            <div class="stat-value">{{ stats.validated_count|default:"0" }}</div>
+        </a>
+        <a href="{% url 'ui:invoice_list' %}?status=transmitted"
+           class="stat-card">
+            <div class="stat-label">Transmises</div>
+            <div class="stat-value">{{ stats.transmitted_count|default:"0" }}</div>
+        </a>
+        <a href="{% url 'ui:invoice_list' %}?status=paid" class="stat-card">
+            <div class="stat-label">Payées</div>
+            <div class="stat-value">{{ stats.paid_count|default:"0" }}</div>
+        </a>
+        <a href="{% url 'ui:invoice_list' %}" class="stat-card">
+            <div class="stat-label">Montant total</div>
+            <div class="stat-value">{{ stats.total_amount|default:"0"|floatformat:2 }}&nbsp;€</div>
+        </a>
+        <a href="{% url 'ui:invoice_list' %}?status=pending" class="stat-card">
+            <div class="stat-label">En attente</div>
+            <div class="stat-value">{{ stats.pending_amount|default:"0"|floatformat:2 }}&nbsp;€</div>
+        </a>
+    </div>
+    <h2>Factures récentes</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Numéro</th>
+                <th>Client</th>
+                <th>Statut</th>
+                <th>Montant TTC</th>
+                <th>Date</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in recent_invoices %}
+                <tr>
+                    <td>{{ invoice.number|default:"Brouillon" }}</td>
+                    <td>{{ invoice.customer.name|default:"—" }}</td>
+                    <td>
+                        <span class="badge badge-{{ invoice.status }}">{{ invoice.get_status_display }}</span>
+                    </td>
+                    <td>{{ invoice.total_incl_tax|default:"—"|floatformat:2 }}&nbsp;€</td>
+                    <td>{{ invoice.issue_date|default:invoice.created_at|date:"d/m/Y" }}</td>
+                    <td class="actions-cell">
+                        <a href="{% url 'ui:invoice_detail' uuid=invoice.uuid %}" class="btn-sm">Voir</a>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr>
+                    <td colspan="6" class="empty-row">Aucune facture</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock content %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}
+    {% if product %}
+        Modifier
+    {% else %}
+        Nouveau
+    {% endif %}
+    produit — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>
+            {% if product %}
+                Modifier le produit
+            {% else %}
+                Nouveau produit
+            {% endif %}
+        </h1>
+    </div>
+    <form method="post" class="form-narrow">
+        {% csrf_token %}
+        <label>Nom</label>
+        <input type="text"
+               name="name"
+               value="{{ product.name|default:'' }}"
+               required>
+        <label>Description</label>
+        <textarea name="description">{{ product.description|default:'' }}</textarea>
+        <div class="form-row">
+            <div>
+                <label>Référence</label>
+                <input type="text"
+                       name="reference"
+                       value="{{ product.reference|default:'' }}">
+            </div>
+            <div>
+                <label>ID externe</label>
+                <input type="text"
+                       name="external_id"
+                       value="{{ product.external_id|default:'' }}">
+            </div>
+        </div>
+        <div class="form-row">
+            <div>
+                <label>Prix unitaire HT</label>
+                <input type="number"
+                       step="0.01"
+                       name="default_unit_price"
+                       value="{{ product.default_unit_price|default:'' }}">
+            </div>
+            <div>
+                <label>Taux TVA (%)</label>
+                <input type="number"
+                       step="0.01"
+                       name="default_vat_rate"
+                       value="{{ product.default_vat_rate|default:'' }}">
+            </div>
+        </div>
+        <div class="form-row">
+            <div>
+                <label>Catégorie TVA</label>
+                <select name="default_vat_category">
+                    <option value="S"
+                            {% if product.default_vat_category == "S" %}selected{% endif %}>S - Standard</option>
+                    <option value="Z"
+                            {% if product.default_vat_category == "Z" %}selected{% endif %}>Z - Taux zéro</option>
+                    <option value="E"
+                            {% if product.default_vat_category == "E" %}selected{% endif %}>E - Exonéré</option>
+                </select>
+            </div>
+            <div>
+                <label>Unité (UN/ECE)</label>
+                <input type="text"
+                       name="default_unit"
+                       value="{{ product.default_unit|default:'C62' }}"
+                       maxlength="10">
+            </div>
+        </div>
+        <button type="submit" class="btn-submit-spaced">Enregistrer</button>
+    </form>
+{% endblock content %}

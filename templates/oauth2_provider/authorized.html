@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}
+    Autorisation accordée — FactPulse
+{% endblock title %}
+{% block content_anonymous %}
+    <div class="login-container">
+        <h1 class="login-title">Autorisation accordée</h1>
+        <div class="section-box">
+            <p>
+                <strong class="text-cyan">{{ application.name }}</strong> a été autorisé
+                à accéder à vos données de facturation.
+            </p>
+            <p class="text-muted">Redirection en cours…</p>
+            <p class="text-muted">
+                Si rien ne se passe,
+                <a href="{{ redirect_uri }}">cliquez ici</a>
+                ou fermez cet onglet.
+            </p>
+        </div>
+    </div>
+    <script>window.location.href = "{{ redirect_uri|escapejs }}";</script>
+{% endblock content_anonymous %}
+{% block content %}
+    <div class="form-narrow">
+        <div class="topbar">
+            <h1>Autorisation accordée</h1>
+        </div>
+        <div class="section-box">
+            <p>
+                <strong class="text-cyan">{{ application.name }}</strong> a été autorisé
+                à accéder à vos données de facturation.
+            </p>
+            <p class="text-muted">Redirection en cours…</p>
+            <p class="text-muted">
+                Si rien ne se passe,
+                <a href="{{ redirect_uri }}">cliquez ici</a>
+                ou fermez cet onglet.
+            </p>
+        </div>
+    </div>
+    <script>window.location.href = "{{ redirect_uri|escapejs }}";</script>
+{% endblock content %}

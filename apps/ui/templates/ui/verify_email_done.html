@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}
+    Vérification email — FactPulse Billing
+{% endblock title %}
+{% block content_anonymous %}
+    <div class="login-container">
+        <h1 class="login-title">FactPulse Billing</h1>
+        {% if invalid %}
+            <div class="error-box">Ce lien de vérification est invalide ou a expiré.</div>
+            <p class="login-link">
+                <a href="{% url 'ui:verify_email_sent' %}">Renvoyer un email de vérification</a>
+            </p>
+        {% else %}
+            <p class="login-body">
+                Votre adresse email a été vérifiée avec succès.
+                Vous pouvez maintenant vous connecter.
+            </p>
+            <p class="login-link">
+                <a href="{% url 'ui:login' %}">Se connecter</a>
+            </p>
+        {% endif %}
+    </div>
+{% endblock content_anonymous %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}
+    Configuration plateforme agréée — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Configuration plateforme agréée</h1>
+    </div>
+    {% if messages %}
+        <div class="mb-1">
+            {% for message in messages %}
+                <div class="{% if message.tags == 'success' %}sandbox-banner{% else %}degraded-banner{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% if not client_uid %}
+        <div class="degraded-banner">
+            Organisation non provisionnée sur FactPulse. Exécutez <code>provision_factpulse_clients</code> ou contactez l'administrateur.
+        </div>
+    {% else %}
+        {% if api_error %}
+            <div class="degraded-banner">Impossible de récupérer la configuration de la plateforme agréée : {{ api_error }}</div>
+        {% endif %}
+        <!-- Status block -->
+        <div class="section-box form-narrow-lg">
+            <h3>Statut</h3>
+            <table class="pdp-status-table">
+                <tr>
+                    <td>Client FactPulse</td>
+                    <td>
+                        <code>{{ client_uid }}</code>
+                    </td>
+                </tr>
+                {% if pdp_status_loaded %}
+                    <tr>
+                        <td>Plateforme configurée</td>
+                        <td>
+                            {% if pdp_config.isConfigured %}
+                                <span class="text-success">Oui</span>
+                            {% else %}
+                                <span class="text-muted">Non</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Active</td>
+                        <td>
+                            {% if pdp_config.isActive %}
+                                <span class="text-success">Oui</span>
+                            {% else %}
+                                <span class="text-muted">Non</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Mode sandbox</td>
+                        <td>{{ pdp_config.modeSandbox|yesno:"Oui,Non" }}</td>
+                    </tr>
+                    {% if pdp_config.oauthClientId %}
+                        <tr>
+                            <td>OAuth Client ID</td>
+                            <td>
+                                <code>{{ pdp_config.oauthClientId }}</code>
+                            </td>
+                        </tr>
+                    {% endif %}
+                    {% if pdp_config.secretStatus %}
+                        <tr>
+                            <td>Secret</td>
+                            <td>
+                                {% if pdp_config.secretStatus.status == "active" %}
+                                    <span class="text-success">Configuré</span>
+                                {% elif pdp_config.secretStatus.status %}
+                                    {{ pdp_config.secretStatus.status }}
+                                {% else %}
+                                    <span class="text-muted">Non configuré</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
+                    {% if pdp_config.lastTestAt %}
+                        <tr>
+                            <td>Dernier test</td>
+                            <td>
+                                {{ pdp_config.lastTestAt }}
+                                {% if pdp_config.lastTestSuccess %}
+                                    — <span class="text-success">OK</span>
+                                {% else %}
+                                    — <span class="text-error">Echec</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
+                {% endif %}
+            </table>
+        </div>
+        <!-- Config form -->
+        <form method="post" class="form-narrow-lg">
+            {% csrf_token %}
+            <div class="section-box">
+                <h3>Credentials plateforme agréée</h3>
+                <p class="section-hint">
+                    Ces informations sont transmises de manière sécurisée à FactPulse et ne sont jamais stockées localement.
+                </p>
+                <label>URL Flow Service</label>
+                <input type="url"
+                       name="flowServiceUrl"
+                       required
+                       value="{{ pdp_config.flowServiceUrl|default:'' }}"
+                       placeholder="https://pdp.example.com/api/v1/flow">
+                <label>URL Token OAuth</label>
+                <input type="url"
+                       name="tokenUrl"
+                       required
+                       value="{{ pdp_config.tokenUrl|default:'' }}"
+                       placeholder="https://pdp.example.com/oauth/token">
+                <label>OAuth Client ID</label>
+                <input type="text"
+                       name="oauthClientId"
+                       required
+                       value="{{ pdp_config.oauthClientId|default:'' }}"
+                       placeholder="client-id-xxxx">
+                <label>Client Secret</label>
+                <input type="password"
+                       name="clientSecret"
+                       required
+                       placeholder="Le secret n'est jamais affiché">
+            </div>
+            <button type="submit" class="btn-submit-full">Enregistrer</button>
+        </form>
+    {% endif %}
+{% endblock content %}

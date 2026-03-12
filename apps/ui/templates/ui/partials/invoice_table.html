@@ -1,0 +1,44 @@
+<table>
+    <thead>
+        <tr>
+            <th>Numéro</th>
+            <th>Client</th>
+            <th>Fournisseur</th>
+            <th>Statut</th>
+            <th>Montant TTC</th>
+            <th>Date</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for invoice in invoices %}
+            <tr>
+                <td>
+                    <a href="{% url 'ui:invoice_detail' uuid=invoice.uuid %}">{{ invoice.number|default:"Brouillon" }}</a>
+                </td>
+                <td>{{ invoice.customer.name|default:"—" }}</td>
+                <td>{{ invoice.supplier.name }}</td>
+                <td>
+                    <span class="badge badge-{{ invoice.status }}">{{ invoice.get_status_display }}</span>
+                    {% if invoice.factpulse_error %}
+                        <span class="badge-error-flag"
+                              title="{{ invoice.factpulse_error.message|default:'Erreur FactPulse' }}">Erreur PA</span>
+                    {% endif %}
+                </td>
+                <td>{{ invoice.total_incl_tax|default:"—"|floatformat:2 }}&nbsp;€</td>
+                <td>{{ invoice.issue_date|default:invoice.created_at|date:"d/m/Y" }}</td>
+                <td class="actions-cell">
+                    <a href="{% url 'ui:invoice_detail' uuid=invoice.uuid %}" class="btn-sm">Voir</a>
+                    {% if invoice.status == "draft" %}
+                        <a href="{% url 'ui:invoice_edit' uuid=invoice.uuid %}" class="btn-sm">Modifier</a>
+                    {% endif %}
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="7" class="empty-row">Aucune facture trouvée</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% include "ui/partials/_pagination.html" %}

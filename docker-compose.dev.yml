@@ -1,0 +1,43 @@
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  billing-web:
+    entrypoint: []
+    command: uv run python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - /app/.venv
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.dev
+      - DEBUG=True
+
+  celery-worker:
+    entrypoint: []
+    command: uv run celery -A config worker -l info
+    volumes:
+      - .:/app
+      - /app/.venv
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.dev
+
+  celery-beat:
+    entrypoint: []
+    command: uv run celery -A config beat -l info
+    volumes:
+      - .:/app
+      - /app/.venv
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.dev

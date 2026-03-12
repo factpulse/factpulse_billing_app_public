@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Bandit security check
+        run: uv run --with "bandit[toml]" bandit -c pyproject.toml -r apps/ config/
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: factpulse_test
+          POSTGRES_USER: factpulse
+          POSTGRES_PASSWORD: factpulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.dev
+      POSTGRES_HOST: localhost
+      POSTGRES_DB: factpulse_test
+      POSTGRES_USER: factpulse
+      POSTGRES_PASSWORD: factpulse
+      POSTGRES_PORT: 5432
+      STRIPE_ENABLED: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install system dependencies (WeasyPrint)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
+            libffi-dev libcairo2 libglib2.0-0 shared-mime-info gettext
+
+      - name: Install Python dependencies
+        run: uv sync --extra payments
+
+      - name: Run migrations
+        run: uv run python manage.py migrate
+
+      - name: Run tests with coverage
+        run: uv run pytest -v --cov --cov-report=term --cov-report=json
+
+      - name: Generate coverage badge
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          python - <<'PYEOF'
+          import json, pathlib
+          cov = int(json.load(open("coverage.json"))["totals"]["percent_covered_display"])
+          color = "#4c1" if cov >= 90 else "#97ca00" if cov >= 80 else "#dfb317" if cov >= 70 else "#fe7d37" if cov >= 60 else "#e05d44"
+          svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="106" height="20">
+          <linearGradient id="a" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
+          <rect rx="3" width="106" height="20" fill="#555"/><rect rx="3" x="62" width="44" height="20" fill="{color}"/>
+          <rect rx="3" width="106" height="20" fill="url(#a)"/>
+          <g fill="#fff" text-anchor="middle" font-family="DejaVu Sans,sans-serif" font-size="11">
+          <text x="32" y="15" fill="#010101" fill-opacity=".3">coverage</text><text x="32" y="14">coverage</text>
+          <text x="83" y="15" fill="#010101" fill-opacity=".3">{cov}%</text><text x="83" y="14">{cov}%</text>
+          </g></svg>'''
+          pathlib.Path(".github/badges/coverage.svg").write_text(svg)
+          print(f"Badge generated: {cov}%")
+          PYEOF
+
+      - name: Commit coverage badge
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/badges/coverage.svg
+          git diff --cached --quiet || (git commit -m "Update coverage badge [skip ci]" && git push)
+
+  docker:
+    name: Docker Build & Smoke Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t factpulse-billing:ci .
+
+      - name: Create minimal .env for smoke test
+        run: |-
+          printf '%s\n' \
+            'DJANGO_SETTINGS_MODULE=config.settings.dev' \
+            'POSTGRES_DB=factpulse' \
+            'POSTGRES_USER=factpulse' \
+            'POSTGRES_PASSWORD=factpulse' \
+            'SECRET_KEY=ci-test-secret-key-not-for-production-use-1234567890' \
+            'DEBUG=True' \
+            > .env
+
+      - name: Start services (dev mode)
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+          echo "Waiting for services to be healthy..."
+          timeout 120 bash -c 'until docker compose -f docker-compose.yml -f docker-compose.dev.yml ps billing-web | grep -q healthy; do sleep 5; done'
+
+      - name: Smoke test — health check
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T billing-web \
+            python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:8000/healthz/'); assert r.status == 200, f'Health check failed: {r.status}'"
+
+      - name: Smoke test — API responds
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T billing-web \
+            python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:8000/api/v1/schema/'); assert r.status == 200"
+
+      - name: Stop services
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v

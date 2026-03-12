@@ -1,0 +1,53 @@
+<table>
+    <thead>
+        <tr>
+            <th>Nom</th>
+            <th>Référence</th>
+            <th>Prix HT</th>
+            <th>TVA</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for p in products %}
+            <tr {% if p.archived %}class="row-archived"{% endif %}>
+                <td>{{ p.name }}</td>
+                <td>{{ p.reference|default:"—" }}</td>
+                <td>
+                    {% if p.default_unit_price is not None %}
+                        {{ p.default_unit_price|floatformat:2 }}
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.default_vat_rate is not None %}
+                        {{ p.default_vat_rate|floatformat:2 }}&nbsp;%
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td class="actions-cell">
+                    <a href="{% url 'ui:product_edit' uuid=p.uuid %}" class="btn-sm">Modifier</a>
+                    <form method="post"
+                          action="{% url 'ui:product_archive' uuid=p.uuid %}"
+                          class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-sm secondary">
+                            {% if p.archived %}
+                                Restaurer
+                            {% else %}
+                                Archiver
+                            {% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="5" class="empty-row">Aucun produit</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% include "ui/partials/_pagination.html" %}

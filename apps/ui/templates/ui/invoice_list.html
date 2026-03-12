@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}
+    Factures — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Factures</h1>
+        <a href="{% url 'ui:invoice_create' %}" role="button">Nouvelle facture</a>
+    </div>
+    <div class="filter-bar">
+        <input type="search"
+               name="search"
+               placeholder="Rechercher..."
+               hx-get="{% url 'ui:invoice_list' %}"
+               hx-trigger="keyup changed delay:300ms"
+               hx-target="#invoice-table"
+               hx-include="[name='status']"
+               class="filter-bar-search">
+        <select name="status"
+                hx-get="{% url 'ui:invoice_list' %}"
+                hx-trigger="change"
+                hx-target="#invoice-table"
+                hx-include="[name='search']"
+                class="filter-bar-select">
+            <option value="">Tous les statuts</option>
+            {% for value, label in status_choices %}
+                <option value="{{ value }}"
+                        {% if current_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+            <option value="pending"
+                    {% if current_status == "pending" %}selected{% endif %}>En attente</option>
+        </select>
+    </div>
+    <div id="invoice-table">{% include "ui/partials/invoice_table.html" %}</div>
+{% endblock content %}

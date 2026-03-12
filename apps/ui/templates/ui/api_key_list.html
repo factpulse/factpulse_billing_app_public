@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}
+    Clés API — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Clés API</h1>
+    </div>
+    {% if messages %}
+        <div class="mb-1">
+            {% for message in messages %}
+                <div class="{% if message.tags == 'success' %}sandbox-banner{% else %}degraded-banner{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% if new_key %}
+        <div class="sandbox-banner api-key-banner">
+            <strong>Votre nouvelle clé API :</strong>
+            <code id="new-key">{{ new_key }}</code>
+            <button type="button"
+                    onclick="navigator.clipboard.writeText(document.getElementById('new-key').textContent).then(() => this.textContent = 'Copié !')"
+                    class="btn-sm api-key-copy-inline">Copier</button>
+            <br>
+            <small>Conservez-la en lieu sûr — elle ne sera plus affichée.</small>
+        </div>
+    {% endif %}
+    <div class="section-box form-narrow-lg">
+        <h3>Créer une clé</h3>
+        <p class="section-hint">
+            Les clés API permettent de connecter des outils externes (automatisations, intégrations MCP) à votre compte FactPulse.
+        </p>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create">
+            <label for="name">Nom</label>
+            <input type="text"
+                   id="name"
+                   name="name"
+                   required
+                   placeholder="Ex : Script export, Zapier…"
+                   maxlength="255">
+            <button type="submit" class="btn-submit-full api-key-create-btn">Créer la clé</button>
+        </form>
+    </div>
+    <div class="section-box form-narrow-lg">
+        <h3>Vos clés</h3>
+        {% if keys %}
+            <table class="pdp-status-table">
+                <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Préfixe</th>
+                        <th>Créée le</th>
+                        <th>Dernière utilisation</th>
+                        <th>Statut</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for key in keys %}
+                        <tr {% if not key.is_active %}class="api-key-revoked"{% endif %}>
+                            <td>{{ key.name }}</td>
+                            <td>
+                                <code>{{ key.prefix }}…</code>
+                            </td>
+                            <td>{{ key.created_at|date:"d/m/Y" }}</td>
+                            <td>{{ key.last_used_at|date:"d/m/Y H:i"|default:"Jamais" }}</td>
+                            <td>
+                                {% if key.is_active %}
+                                    <span class="text-success">Active</span>
+                                {% else %}
+                                    <span class="text-muted">Révoquée</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if key.is_active %}
+                                    <form method="post"
+                                          class="api-key-revoke-form"
+                                          onsubmit="return confirm('Révoquer la clé « {{ key.name }} » ?')">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="revoke">
+                                        <input type="hidden" name="key_uuid" value="{{ key.uuid }}">
+                                        <button type="submit" class="btn-sm btn-danger">Révoquer</button>
+                                    </form>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="text-muted">Aucune clé API créée.</p>
+        {% endif %}
+    </div>
+    <div class="section-box form-narrow-lg">
+        <h3>Documentation API</h3>
+        <p class="section-hint">Consultez la référence complète des endpoints REST pour intégrer FactPulse à vos outils.</p>
+        <a href="{% url 'scalar-docs' %}" class="btn-submit-full">Voir la documentation API</a>
+    </div>
+{% endblock content %}

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}
+    Paramétrage — {{ supplier.name }} — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <script id="supplier-initial" type="application/json">
+    {
+        "days": {{ supplier.payment_terms_days|default:'null' }},
+        "eom": {{ supplier.payment_terms_end_of_month|yesno:'true,false' }}
+    }
+    </script>
+    <div class="topbar">
+        <h1>Paramétrage facturation</h1>
+        <a href="{% url 'ui:supplier_edit' uuid=supplier.uuid %}"
+           role="button"
+           class="outline">Retour fournisseur</a>
+    </div>
+    <form method="post"
+          enctype="multipart/form-data"
+          class="form-narrow-lg"
+          x-data="supplierSettings">
+        {% csrf_token %}
+        <!-- Section 1: Identité visuelle -->
+        <div class="section-box">
+            <h3>Identité visuelle</h3>
+            <label>Logo</label>
+            {% if supplier.logo %}
+                <div>
+                    <img src="{{ supplier.logo.url }}"
+                         alt="Logo"
+                         class="logo-preview"
+                         width="200"
+                         height="80">
+                    <div>
+                        <label>
+                            <input type="checkbox" name="logo_clear">
+                            Supprimer le logo
+                        </label>
+                    </div>
+                </div>
+            {% endif %}
+            <input type="file" name="logo" accept="image/*">
+            <label class="label-spaced">Couleur principale</label>
+            <input type="color"
+                   name="primary_color"
+                   value="{{ supplier.primary_color|default:'#000000' }}"
+                   class="color-input">
+        </div>
+        <hr>
+        <!-- Section 2: Mentions légales obligatoires -->
+        <div class="section-box">
+            <h3>Mentions légales obligatoires</h3>
+            <p class="section-hint">Norme XP Z12-012 (BR-FR-05) — ces mentions seront pré-remplies sur chaque facture.</p>
+            <label>Indemnité de recouvrement (PMT)</label>
+            <textarea name="note_pmt" rows="2">{{ supplier.note_pmt }}</textarea>
+            <label>Pénalités de retard (PMD)</label>
+            <textarea name="note_pmd"
+                      rows="2"
+                      placeholder="Ex: Pénalités de retard : 3 fois le taux d'intérêt légal">{{ supplier.note_pmd }}</textarea>
+            <label>Escompte (AAB)</label>
+            <textarea name="note_aab" rows="2">{{ supplier.note_aab }}</textarea>
+            <label>Mentions complémentaires libres</label>
+            <textarea name="pdf_legal_mentions"
+                      rows="3"
+                      placeholder="Infos RCS, capital social, etc.">{{ supplier.pdf_legal_mentions }}</textarea>
+        </div>
+        <hr>
+        <!-- Section 3: Coordonnées bancaires -->
+        <div class="section-box">
+            <h3>Coordonnées bancaires</h3>
+            <p class="section-hint">Affichées sur les factures dont le moyen de paiement est « Virement ».</p>
+            <div class="form-row">
+                <div>
+                    <label>IBAN</label>
+                    <input type="text"
+                           name="iban"
+                           value="{{ supplier.iban }}"
+                           placeholder="FR76 3000 6000 0112 3456 7890 189"
+                           maxlength="34">
+                </div>
+                <div>
+                    <label>BIC</label>
+                    <input type="text"
+                           name="bic"
+                           value="{{ supplier.bic }}"
+                           placeholder="AGRIFRPP"
+                           maxlength="11">
+                </div>
+            </div>
+        </div>
+        <hr>
+        <!-- Section 4: Conditions de paiement -->
+        <div class="section-box">
+            <h3>Conditions de paiement</h3>
+            <div class="form-row">
+                <div>
+                    <label>Délai de paiement (jours)</label>
+                    <input type="number"
+                           name="payment_terms_days"
+                           x-md.number="days"
+                           placeholder="30"
+                           min="0">
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle">
+                        <input type="checkbox"
+                               name="payment_terms_end_of_month"
+                               x-md="eom"
+                               {% if supplier.payment_terms_end_of_month %}checked{% endif %}>
+                        <span class="toggle-track"></span>
+                        Fin de mois
+                    </label>
+                </div>
+            </div>
+            <template x-if="termsPreview">
+                <p class="terms-preview" x-text="termsPreview"></p>
+            </template>
+        </div>
+        <hr>
+        <!-- Section 5: Régime TVA (e-reporting) -->
+        <div class="section-box">
+            <h3>Régime TVA</h3>
+            <p class="section-hint">Détermine la périodicité de transmission e-reporting (DGFiP v3.1, Tableau 12).</p>
+            <select name="vat_regime">
+                <option value="reel_normal_mensuel"
+                        {% if supplier.vat_regime == "reel_normal_mensuel" %}selected{% endif %}>
+                    Réel normal mensuel
+                </option>
+                <option value="reel_normal_trimestriel"
+                        {% if supplier.vat_regime == "reel_normal_trimestriel" %}selected{% endif %}>
+                    Réel normal trimestriel
+                </option>
+                <option value="simplifie"
+                        {% if supplier.vat_regime == "simplifie" %}selected{% endif %}>Simplifié</option>
+                <option value="franchise"
+                        {% if supplier.vat_regime == "franchise" %}selected{% endif %}>Franchise en base</option>
+            </select>
+        </div>
+        <button type="submit" class="btn-submit-full">Enregistrer</button>
+    </form>
+    <script>
+    document.addEventListener('alpine:init', function() {
+        Alpine.data('supplierSettings', function() {
+            var init = JSON.parse(document.getElementById('supplier-initial').textContent);
+            return {
+                days: init.days,
+                eom: init.eom,
+                get termsPreview() {
+                    if (!this.days) return '';
+                    var txt = 'Paiement à ' + this.days + ' jours';
+                    if (this.eom) txt += ' fin de mois';
+                    return txt;
+                },
+            };
+        });
+    });
+    </script>
+{% endblock content %}

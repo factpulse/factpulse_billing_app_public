@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}
+    Fournisseurs — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Fournisseurs</h1>
+        <div class="topbar-actions">
+            {% if show_archived %}
+                <a href="{% url 'ui:supplier_list' %}"
+                   role="button"
+                   class="outline btn-sm">Masquer archivés</a>
+            {% else %}
+                <a href="{% url 'ui:supplier_list' %}?archived=1"
+                   role="button"
+                   class="outline btn-sm">Voir archivés</a>
+            {% endif %}
+            <a href="{% url 'ui:supplier_create' %}" role="button">Nouveau fournisseur</a>
+        </div>
+    </div>
+    <div id="supplier-table">{% include "ui/partials/supplier_table.html" %}</div>
+{% endblock content %}

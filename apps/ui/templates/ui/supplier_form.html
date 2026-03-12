@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+{% block title %}
+    {% if supplier %}
+        Modifier
+    {% else %}
+        Nouveau
+    {% endif %}
+    fournisseur — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>
+            {% if supplier %}
+                Modifier le fournisseur
+            {% else %}
+                Nouveau fournisseur
+            {% endif %}
+        </h1>
+    </div>
+    <script id="supplier-initial" type="application/json">
+    {
+        "name": "{{ supplier.name|default:''|escapejs }}",
+        "siren": "{{ supplier.siren|default:''|escapejs }}",
+        "siret": "{{ supplier.siret|default:''|escapejs }}",
+        "vat_number": "{{ supplier.vat_number|default:''|escapejs }}",
+        "email": "{{ supplier.email|default:''|escapejs }}",
+        "electronic_address": "{{ supplier.electronic_address.identifier|default:''|escapejs }}",
+        "external_id": "{{ supplier.external_id|default:''|escapejs }}",
+        "address_line1": "{{ supplier.address.lineOne|default:''|escapejs }}",
+        "address_postcode": "{{ supplier.address.postalCode|default:''|escapejs }}",
+        "address_city": "{{ supplier.address.city|default:''|escapejs }}",
+        "address_country": "{{ supplier.address.countryCode|default:'FR'|escapejs }}",
+        "sireneLookupUrl": "{% url 'ui:sirene_lookup' %}",
+        "directoryLookupUrl": "{% url 'ui:directory_lookup' %}"
+    }
+    </script>
+    <form method="post"
+          class="form-narrow"
+          @keydown.enter="preventEnterSubmit"
+          x-data="supplierForm">
+        {% csrf_token %}
+        <div class="section-box">
+            <label class="section-label">Recherche SIRENE</label>
+            <div class="input-row">
+                <input type="text"
+                       x-md="sireneQuery"
+                       placeholder="SIREN (9 chiffres) ou SIRET (14 chiffres)"
+                       @keydown.enter.prevent="doLookup">
+                <button type="button"
+                        class="outline"
+                        @click="doLookup"
+                        :disabled="sireneLoading"
+                        x-text="lookupBtnText">Rechercher</button>
+            </div>
+            <template x-if="sireneError">
+                <p class="field-feedback text-error" x-text="sireneError"></p>
+            </template>
+            <template x-if="showSireneName">
+                <p class="field-feedback text-success">
+                    Entreprise trouvée : <strong x-text="sireneName"></strong>
+                </p>
+            </template>
+            <template x-if="sireneCessed">
+                <p class="field-feedback-sm text-warning-bold">Attention : cette entreprise est cessée.</p>
+            </template>
+        </div>
+        <label>Nom</label>
+        <input type="text" name="name" x-md="name" required>
+        <div class="form-row">
+            <div>
+                <label>SIREN</label>
+                <input type="text" name="siren" x-md="siren" maxlength="9">
+            </div>
+            <div>
+                <label>SIRET</label>
+                <input type="text" name="siret" x-md="siret" maxlength="14">
+            </div>
+        </div>
+        <div class="form-row">
+            <div>
+                <label>N° TVA</label>
+                <input type="text" name="vat_number" x-md="vat_number">
+            </div>
+            <div>
+                <label>Email</label>
+                <input type="email" name="email" x-md="email">
+            </div>
+        </div>
+        <label>Adresse électronique (routage)</label>
+        <div class="input-row">
+            <input type="text"
+                   name="electronic_address"
+                   x-md="electronic_address"
+                   placeholder="Si vide, le SIREN sera utilisé">
+            <button type="button"
+                    class="outline"
+                    @click="doDirectoryLookup"
+                    :disabled="dirLookupDisabled"
+                    x-text="dirBtnText">Annuaire</button>
+        </div>
+        <template x-if="dirError">
+            <p class="field-feedback-sm text-error" x-text="dirError"></p>
+        </template>
+        <template x-if="dirShowDialog">
+            <div class="modal-overlay" @click.self="closeDirDialog">
+                <div class="modal-box">
+                    <h4>Choisir une adresse électronique</h4>
+                    <p class="section-hint">Plusieurs adresses trouvées pour ce SIREN. Sélectionnez celle à utiliser :</p>
+                    <template x-for="addr in dirAddresses" :key="addr.identifier">
+                        <button type="button"
+                                @click="onSelectAddress"
+                                :data-identifier="addr.identifier"
+                                class="modal-option">
+                            <strong x-text="addr.label"></strong>
+                            <template x-if="addr.siret">
+                                <span class="meta" x-text="addr.siretLabel"></span>
+                            </template>
+                        </button>
+                    </template>
+                    <button type="button" class="outline" @click="closeDirDialog">Annuler</button>
+                </div>
+            </div>
+        </template>
+        <label>ID externe</label>
+        <input type="text" name="external_id" x-md="external_id">
+        <h4>Adresse</h4>
+        <label>Ligne 1</label>
+        <div class="addr-autocomplete">
+            <input type="text"
+                   name="address_line1"
+                   x-md="address_line1"
+                   @input.debounce.300ms="fetchAddress"
+                   @blur="delayedClearSuggestions"
+                   autocomplete="off">
+            <div class="addr-suggestions" x-show="hasAddrSuggestions" x-cloak>
+                <template x-for="addr in addrSuggestions" :key="addr.label">
+                    <button type="button"
+                            @mousedown.prevent="selectAddr(addr)"
+                            x-text="addr.label"></button>
+                </template>
+            </div>
+        </div>
+        <div class="form-row">
+            <div>
+                <label>Code postal</label>
+                <input type="text" name="address_postcode" x-md="address_postcode">
+            </div>
+            <div>
+                <label>Ville</label>
+                <input type="text" name="address_city" x-md="address_city">
+            </div>
+        </div>
+        <label>Pays</label>
+        {% include "ui/partials/_country_select.html" %}
+        <div>
+            <label>
+                <input type="checkbox"
+                       name="is_default"
+                       {% if supplier.is_default %}checked{% endif %}>
+                Fournisseur par défaut
+            </label>
+        </div>
+        <div class="form-actions">
+            <button type="submit">Enregistrer</button>
+            {% if supplier %}
+                <a href="{% url 'ui:supplier_settings' uuid=supplier.uuid %}"
+                   role="button"
+                   class="outline">Paramétrage facturation</a>
+            {% endif %}
+        </div>
+    </form>
+    <script>
+    document.addEventListener('alpine:init', function() {
+        Alpine.data('supplierForm', function() {
+            var init = JSON.parse(document.getElementById('supplier-initial').textContent);
+            return {
+                sireneQuery: '',
+                sireneLoading: false,
+                sireneError: '',
+                sireneCessed: false,
+                sireneName: '',
+                name: init.name,
+                siren: init.siren,
+                siret: init.siret,
+                vat_number: init.vat_number,
+                email: init.email,
+                electronic_address: init.electronic_address,
+                external_id: init.external_id,
+                address_line1: init.address_line1,
+                address_postcode: init.address_postcode,
+                address_city: init.address_city,
+                address_country: init.address_country,
+                addrSuggestions: [],
+                dirLoading: false,
+                dirError: '',
+                dirAddresses: [],
+                dirShowDialog: false,
+
+                get lookupBtnText() {
+                    return this.sireneLoading ? 'Recherche\u2026' : 'Rechercher';
+                },
+
+                get showSireneName() {
+                    return this.sireneName && !this.sireneError;
+                },
+
+                get dirLookupDisabled() {
+                    return this.dirLoading || this.siren.length !== 9;
+                },
+
+                get dirBtnText() {
+                    return this.dirLoading ? 'Recherche\u2026' : 'Annuaire';
+                },
+
+                get hasAddrSuggestions() {
+                    return this.addrSuggestions.length > 0;
+                },
+
+                preventEnterSubmit(event) {
+                    if (event.target.matches('input[type=text],input[type=email],input[type=number],input[type=tel],input[type=url],input[type=search]')) {
+                        event.preventDefault();
+                    }
+                },
+
+                closeDirDialog() {
+                    this.dirShowDialog = false;
+                },
+
+                delayedClearSuggestions() {
+                    var self = this;
+                    setTimeout(function() { self.addrSuggestions = []; }, 200);
+                },
+
+                async fetchAddress() {
+                    if (this.address_line1.length < 3) { this.addrSuggestions = []; return; }
+                    try {
+                        var resp = await fetch('https://api-adresse.data.gouv.fr/search/?q=' + encodeURIComponent(this.address_line1) + '&limit=5');
+                        var json = await resp.json();
+                        this.addrSuggestions = (json.features || []).map(function(f) { return f.properties; });
+                    } catch (e) {
+                        this.addrSuggestions = [];
+                    }
+                },
+
+                selectAddr(addr) {
+                    this.address_line1 = addr.name || addr.label || '';
+                    this.address_postcode = addr.postcode || '';
+                    this.address_city = addr.city || '';
+                    this.address_country = 'FR';
+                    this.addrSuggestions = [];
+                },
+
+                async doDirectoryLookup() {
+                    if (!this.siren || this.siren.length !== 9) { this.dirError = 'SIREN requis (9 chiffres).'; return; }
+                    this.dirLoading = true;
+                    this.dirError = '';
+                    this.dirAddresses = [];
+                    try {
+                        var resp = await fetch(init.directoryLookupUrl + '?siren=' + encodeURIComponent(this.siren));
+                        var json = await resp.json();
+                        if (json.error) { this.dirError = json.error; return; }
+                        var data = json.data || {};
+                        var addrs = this._extractAddresses(data);
+                        if (addrs.length === 0) { this.dirError = 'Aucune adresse trouvée dans l\'annuaire.'; }
+                        else if (addrs.length === 1) { this.electronic_address = addrs[0].identifier; }
+                        else { this.dirAddresses = addrs; this.dirShowDialog = true; }
+                    } catch (e) {
+                        this.dirError = 'Erreur réseau, veuillez réessayer.';
+                    } finally {
+                        this.dirLoading = false;
+                    }
+                },
+
+                _extractAddresses(data) {
+                    var addrs = [];
+                    var results = data.results || [];
+                    for (var dl of results) {
+                        if (dl.addressingIdentifier) {
+                            var label = dl.addressingIdentifier;
+                            if (dl.siret) label += ' (SIRET: ' + dl.siret + ')';
+                            if (dl.plateform && dl.plateform.platformType) label += ' [' + dl.plateform.platformType + ']';
+                            addrs.push({
+                                identifier: dl.addressingIdentifier,
+                                siret: dl.siret || '',
+                                siretLabel: dl.siret ? 'SIRET: ' + dl.siret : '',
+                                label: label,
+                            });
+                        }
+                    }
+                    return addrs;
+                },
+
+                onCountryChange() {},
+
+                onSelectAddress(event) {
+                    this.electronic_address = event.currentTarget.dataset.identifier;
+                    this.dirShowDialog = false;
+                },
+
+                async doLookup() {
+                    if (!this.sireneQuery.trim()) return;
+                    this.sireneLoading = true;
+                    this.sireneError = '';
+                    this.sireneCessed = false;
+                    this.sireneName = '';
+                    try {
+                        var resp = await fetch(init.sireneLookupUrl + '?q=' + encodeURIComponent(this.sireneQuery.trim()));
+                        var json = await resp.json();
+                        if (json.error) { this.sireneError = json.error; return; }
+                        var d = json.data;
+                        this.name = d.name || this.name;
+                        this.siren = d.siren || '';
+                        this.siret = d.siret || '';
+                        this.vat_number = d.vat_number || '';
+                        this.address_line1 = d.address_line1 || '';
+                        this.address_postcode = d.address_postcode || '';
+                        this.address_city = d.address_city || '';
+                        this.address_country = d.address_country || 'FR';
+                        this.sireneName = d.name || '';
+                        if (d.etat_administratif === 'C') { this.sireneCessed = true; }
+                    } catch (e) {
+                        this.sireneError = 'Erreur réseau, veuillez réessayer.';
+                    } finally {
+                        this.sireneLoading = false;
+                    }
+                }
+            };
+        });
+    });
+    </script>
+{% endblock content %}

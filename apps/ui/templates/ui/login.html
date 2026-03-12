@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}
+    Connexion — FactPulse Billing
+{% endblock title %}
+{% block content_anonymous %}
+    <div class="login-container">
+        <h1 class="login-title">FactPulse Billing</h1>
+        {% if email_not_verified %}
+            <div class="error-box">
+                Votre adresse email n'a pas encore été vérifiée.
+                <a href="{% url 'ui:verify_email_sent' %}">Renvoyer l'email de vérification</a>
+            </div>
+        {% elif form.errors %}
+            <div class="error-box">Identifiants incorrects.</div>
+        {% endif %}
+        <form method="post">
+            {% csrf_token %}
+            <label for="id_username">Nom d'utilisateur</label>
+            <input type="text" name="username" id="id_username" autofocus required>
+            <label for="id_password">Mot de passe</label>
+            <input type="password" name="password" id="id_password" required>
+            <button type="submit" class="login-btn">Se connecter</button>
+        </form>
+        <p class="login-link">
+            <a href="{% url 'ui:password_reset' %}">Mot de passe oublié ?</a>
+        </p>
+        <p class="login-link">
+            Pas encore de compte ? <a href="{% url 'ui:signup' %}">Créer un compte</a>
+        </p>
+    </div>
+{% endblock content_anonymous %}

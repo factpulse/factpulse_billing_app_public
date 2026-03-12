@@ -1,0 +1,264 @@
+# French translations for FactPulse Billing App
+# Copyright (C) 2026 FactPulse
+# This file is distributed under the same license as the FactPulse package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: FactPulse Billing 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-02-06 12:00+0100\n"
+"PO-Revision-Date: 2026-02-06 12:00+0100\n"
+"Last-Translator: FactPulse <dev@factpulse.com>\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+# --- Status labels ---
+msgid "Draft"
+msgstr "Brouillon"
+
+msgid "Processing"
+msgstr "En cours de génération"
+
+msgid "Validated"
+msgstr "Validée"
+
+msgid "Transmitted"
+msgstr "Transmise"
+
+msgid "Accepted"
+msgstr "Acceptée"
+
+msgid "Rejected"
+msgstr "Rejetée"
+
+msgid "Paid"
+msgstr "Payée"
+
+msgid "Cancelled"
+msgstr "Annulée"
+
+# --- Navigation ---
+msgid "Dashboard"
+msgstr "Tableau de bord"
+
+msgid "Invoices"
+msgstr "Factures"
+
+msgid "Customers"
+msgstr "Clients"
+
+msgid "Products"
+msgstr "Produits"
+
+msgid "Suppliers"
+msgstr "Fournisseurs"
+
+msgid "Log out"
+msgstr "Déconnexion"
+
+# --- Invoice ---
+msgid "New invoice"
+msgstr "Nouvelle facture"
+
+msgid "Edit invoice"
+msgstr "Modifier la facture"
+
+msgid "Validate"
+msgstr "Valider"
+
+msgid "Transmit"
+msgstr "Transmettre"
+
+msgid "Mark as paid"
+msgstr "Marquer payée"
+
+msgid "Cancel"
+msgstr "Annuler"
+
+msgid "Delete"
+msgstr "Supprimer"
+
+msgid "Download PDF"
+msgstr "Télécharger PDF"
+
+msgid "Create draft"
+msgstr "Créer le brouillon"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+# --- Fields ---
+msgid "Number"
+msgstr "Numéro"
+
+msgid "Customer"
+msgstr "Client"
+
+msgid "Supplier"
+msgstr "Fournisseur"
+
+msgid "Status"
+msgstr "Statut"
+
+msgid "Amount incl. tax"
+msgstr "Montant TTC"
+
+msgid "Issue date"
+msgstr "Date d'émission"
+
+msgid "Due date"
+msgstr "Date d'échéance"
+
+msgid "Total excl. tax"
+msgstr "Total HT"
+
+msgid "Total tax"
+msgstr "Total TVA"
+
+msgid "Total incl. tax"
+msgstr "Total TTC"
+
+msgid "Name"
+msgstr "Nom"
+
+msgid "SIREN"
+msgstr "SIREN"
+
+msgid "SIRET"
+msgstr "SIRET"
+
+msgid "VAT number"
+msgstr "Numéro de TVA"
+
+msgid "Email"
+msgstr "Email"
+
+msgid "External ID"
+msgstr "ID externe"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Reference"
+msgstr "Référence"
+
+msgid "Unit price"
+msgstr "Prix unitaire"
+
+msgid "VAT rate"
+msgstr "Taux TVA"
+
+msgid "VAT category"
+msgstr "Catégorie TVA"
+
+msgid "Unit"
+msgstr "Unité"
+
+msgid "Default"
+msgstr "Par défaut"
+
+msgid "Address"
+msgstr "Adresse"
+
+msgid "City"
+msgstr "Ville"
+
+msgid "Postal code"
+msgstr "Code postal"
+
+msgid "Country"
+msgstr "Pays"
+
+# --- Actions & messages ---
+msgid "Quantity"
+msgstr "Quantité"
+
+msgid "Designation"
+msgstr "Désignation"
+
+msgid "Add a line"
+msgstr "Ajouter une ligne"
+
+msgid "Payment method"
+msgstr "Moyen de paiement"
+
+msgid "Wire transfer"
+msgstr "Virement"
+
+msgid "Credit card"
+msgstr "Carte bancaire"
+
+msgid "Direct debit"
+msgstr "Prélèvement"
+
+msgid "Notes"
+msgstr "Notes"
+
+msgid "Preview"
+msgstr "Aperçu"
+
+msgid "History"
+msgstr "Historique"
+
+msgid "No invoices"
+msgstr "Aucune facture"
+
+msgid "No customers"
+msgstr "Aucun client"
+
+msgid "No products"
+msgstr "Aucun produit"
+
+msgid "No suppliers"
+msgstr "Aucun fournisseur"
+
+msgid "Search..."
+msgstr "Rechercher..."
+
+msgid "All statuses"
+msgstr "Tous les statuts"
+
+msgid "View"
+msgstr "Voir"
+
+msgid "Edit"
+msgstr "Modifier"
+
+msgid "Invitation sent."
+msgstr "Invitation envoyée."
+
+msgid "Invalid credentials."
+msgstr "Identifiants incorrects."
+
+msgid "Log in"
+msgstr "Se connecter"
+
+msgid "Username"
+msgstr "Nom d'utilisateur"
+
+msgid "Password"
+msgstr "Mot de passe"
+
+# --- Degraded mode ---
+msgid "Degraded mode — configure FACTPULSE_API_URL, FACTPULSE_EMAIL and FACTPULSE_PASSWORD to enable 2026 compliance."
+msgstr "Mode dégradé — configurez FACTPULSE_API_URL, FACTPULSE_EMAIL et FACTPULSE_PASSWORD pour activer la conformité 2026."
+
+msgid "Sandbox mode — PDP transmission and real directory are disabled."
+msgstr "Mode sandbox — la transmission PDP et l'annuaire réel sont désactivés."
+
+# --- Errors ---
+msgid "Only draft invoices can be edited."
+msgstr "Seules les factures en brouillon peuvent être modifiées."
+
+msgid "Only draft invoices can be deleted."
+msgstr "Seules les factures en brouillon peuvent être supprimées."
+
+msgid "The invoice has been modified. Reload and try again."
+msgstr "La facture a été modifiée. Rechargez et réessayez."
+
+msgid "The 'version' field is required for updates."
+msgstr "Le champ 'version' est obligatoire pour les mises à jour."

@@ -1,0 +1,774 @@
+{% extends "base.html" %}
+{% load static l10n %}
+{% block title %}
+    {% if invoice %}
+        Modifier
+    {% else %}
+        Nouvelle
+    {% endif %}
+    facture — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>
+            {% if invoice %}
+                Modifier la facture
+            {% else %}
+                Nouvelle facture
+            {% endif %}
+        </h1>
+        {% if invoice and invoice.status == "draft" and not invoice.number %}
+            <form method="post"
+                  action="{% url 'ui:invoice_delete' uuid=invoice.uuid %}"
+                  class="form-inline"
+                  onsubmit="return confirm('Supprimer ce brouillon ?')">
+                {% csrf_token %}
+                <button type="submit" class="secondary">Supprimer</button>
+            </form>
+        {% endif %}
+    </div>
+    {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+    <script id="invoice-initial" type="application/json">
+{
+    "supplierId": {% if invoice and invoice.supplier %}"{{ invoice.supplier.uuid }}"{% else %}""{% endif %},
+    "customerId": {% if invoice and invoice.customer %}"{{ invoice.customer.uuid }}"{% else %}""{% endif %},
+    "issueDate": {% if invoice %}"{{ invoice.issue_date|date:'Y-m-d' }}"{% else %}""{% endif %},
+    "dueDate": {% if invoice %}"{{ invoice.due_date|date:'Y-m-d' }}"{% else %}""{% endif %},
+    "hasDueDate": {% if invoice and invoice.due_date %}true{% else %}false{% endif %},
+    "supplierDefaultsUrl": "/suppliers/{uuid}/defaults/",
+    "lines": [
+        {% if invoice %}{% for line in invoice.en16931_data.invoiceLines %}{
+            "itemName": "{{ line.itemName|escapejs }}",
+            "quantity": "{{ line.quantity }}",
+            "unitNetPrice": "{{ line.unitNetPrice }}",
+            "manualVatRate": "{{ line.manualVatRate|default:'20.00' }}",
+            "vatCategory": "{{ line.vatCategory|default:'S' }}",
+            "exemptionReason": "{{ line.exemptionReason|default:''|escapejs }}"
+        }{% if not forloop.last %},{% endif %}{% endfor %}{% endif %}
+    ],
+    "notes": {
+        "pmt": "{% if invoice and invoice.en16931_data.notes %}{% for note in invoice.en16931_data.notes %}{% if note.subjectCode == 'PMT' %}{{ note.content|escapejs }}{% endif %}{% endfor %}{% endif %}",
+        "pmd": "{% if invoice and invoice.en16931_data.notes %}{% for note in invoice.en16931_data.notes %}{% if note.subjectCode == 'PMD' %}{{ note.content|escapejs }}{% endif %}{% endfor %}{% endif %}",
+        "aab": "{% if invoice and invoice.en16931_data.notes %}{% for note in invoice.en16931_data.notes %}{% if note.subjectCode == 'AAB' %}{{ note.content|escapejs }}{% endif %}{% endfor %}{% endif %}"
+    }
+}
+    </script>
+    <div x-data="invoiceForm" class="split-view">
+        <!-- Form -->
+        <div>
+            <form method="post" @submit="beforeSubmit">
+                {% csrf_token %}
+                {% if invoice %}
+                    <input type="hidden"
+                           name="invoice_type_code"
+                           value="{{ invoice.invoice_type_code }}">
+                {% endif %}
+                <div class="form-row">
+                    <div>
+                        <label for="supplier_id">Fournisseur</label>
+                        <select name="supplier_id"
+                                id="supplier_id"
+                                required
+                                x-ts
+                                @change="onSupplierChange">
+                            {% for sup in suppliers %}
+                                <option value="{{ sup.uuid }}"
+                                        data-country="{{ sup.address.countryCode|default:'FR' }}"
+                                        {% if invoice and invoice.supplier_id == sup.id %}selected{% endif %}
+                                        {% if sup.is_default and not invoice %}selected{% endif %}>
+                                    {{ sup.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="customer_id">Client</label>
+                        <select name="customer_id"
+                                id="customer_id"
+                                x-md="customerId"
+                                x-ts
+                                @change="onCustomerChange">
+                            <option value="">— Sélectionner —</option>
+                            {% for cust in customers %}
+                                <option value="{{ cust.uuid }}"
+                                        data-country="{{ cust.address.countryCode|default:'FR' }}"
+                                        {% if invoice and invoice.customer_id == cust.id %}selected{% endif %}>
+                                    {{ cust.name }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="issue_date">Date d'émission</label>
+                        <input type="date"
+                               name="issue_date"
+                               id="issue_date"
+                               x-md="issueDate"
+                               @change="onIssueDateChange">
+                    </div>
+                    <div>
+                        <label for="due_date">Date d'échéance</label>
+                        <input type="date"
+                               name="due_date"
+                               id="due_date"
+                               x-md="dueDate"
+                               @change="checkDueDate">
+                        <template x-if="showDueDateWarning">
+                            <div class="field-warning">
+                                <small>
+                                    Échéance calculée : <strong x-text="expectedDueDate"></strong>
+                                    (<span x-text="paymentTermsDays"></span>j<span x-show="paymentTermsEom">fin de mois</span>)
+                                    — <a href="#" @click.prevent="applyExpectedDueDate">Appliquer</a>
+                                </small>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label for="payment_means">Moyen de paiement</label>
+                        <select name="payment_means" id="payment_means">
+                            <option value="VIREMENT">Virement</option>
+                            <option value="AUTRE">Carte bancaire</option>
+                            <option value="PRELEVEMENT">Prélèvement</option>
+                        </select>
+                    </div>
+                </div>
+                <hr>
+                <h3>Lignes de facture</h3>
+                <template x-for="(line, index) in lines" :key="index">
+                    <div class="line-block">
+                        <div class="line-block-header">
+                            <span class="line-number" x-text="line._label"></span>
+                            {% if products %}
+                                <div class="line-catalog-picker">
+                                    <select @change="onCatalogChange"
+                                            :data-line-index="line._index"
+                                            x-ts
+                                            data-ts-wrapper-class="ts-wrapper single ts-catalog">
+                                        <option value="">— Produit catalogue —</option>
+                                        {% for p in products %}
+                                            <option value="{{ p.uuid }}"
+                                                    data-name="{{ p.name }}"
+                                                    data-price="{% if p.default_unit_price is not None %}{{ p.default_unit_price|unlocalize }}{% endif %}"
+                                                    data-vat="{% if p.default_vat_rate is not None %}{{ p.default_vat_rate|unlocalize }}{% endif %}">
+                                                {{ p.name }}
+                                                {% if p.default_unit_price %}({{ p.default_unit_price }}&nbsp;€){% endif %}
+                                            </option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                            {% endif %}
+                            <button type="button"
+                                    @click="onRemoveLine"
+                                    :data-line-index="line._index"
+                                    class="line-remove-btn"
+                                    x-show="canRemoveLine"
+                                    title="Supprimer la ligne">×</button>
+                        </div>
+                        <div class="line-fields">
+                            <div class="line-field line-field-name">
+                                <label class="line-field-label">Désignation</label>
+                                <textarea :name="line._f_item_name"
+                                          class="line-name-input"
+                                          x-md="line.itemName"
+                                          @input="onLineInput"
+                                          @focus="onLineFocus"
+                                          @blur="onLineBlur"
+                                          :title="line.itemName"
+                                          placeholder="Désignation du produit ou service"
+                                          required
+                                          rows="1"></textarea>
+                            </div>
+                            <div class="line-field">
+                                <label class="line-field-label">Qté</label>
+                                <input type="number"
+                                       :name="line._f_quantity"
+                                       x-md="line.quantity"
+                                       @input="recalculate"
+                                       step="0.01"
+                                       min="0"
+                                       required>
+                            </div>
+                            <div class="line-field">
+                                <label class="line-field-label">Prix unit. HT</label>
+                                <input type="number"
+                                       :name="line._f_unit_price"
+                                       x-md="line.unitNetPrice"
+                                       @input="recalculate"
+                                       step="0.01"
+                                       min="0"
+                                       required>
+                            </div>
+                            <div class="line-field">
+                                <label class="line-field-label">TVA</label>
+                                <select :name="line._f_vat_rate"
+                                        :data-line-index="line._index"
+                                        x-md="line.manualVatRate"
+                                        @change="onVatRateChange">
+                                    <option value="20.00">20 %</option>
+                                    <option value="10.00">10 %</option>
+                                    <option value="5.50">5,5 %</option>
+                                    <option value="2.10">2,1 %</option>
+                                    <option value="0.00">0 %</option>
+                                </select>
+                            </div>
+                            <div class="line-field">
+                                <label class="line-field-label">Montant HT</label>
+                                <input type="text"
+                                       :name="line._f_net_amount"
+                                       :value="line._netAmount"
+                                       readonly
+                                       class="input-readonly">
+                            </div>
+                        </div>
+                        <input type="hidden" :name="line._f_vat_category" :value="line.vatCategory">
+                        <input type="hidden" :name="line._f_exemption" :value="line.exemptionReason">
+                        <template x-if="line._isZeroVat">
+                            <div class="vat-exemption-row">
+                                <div>
+                                    <label class="line-field-label">Catégorie TVA</label>
+                                    <select x-md="line.vatCategory"
+                                            :data-line-index="line._index"
+                                            @change="onCategoryChange">
+                                        <option value="E">E — Exonéré</option>
+                                        <option value="K">K — Intra-communautaire</option>
+                                        <option value="G">G — Export hors UE</option>
+                                        <option value="AE">AE — Autoliquidation</option>
+                                    </select>
+                                </div>
+                                <div class="flex-1">
+                                    <label class="line-field-label">Motif d'exemption</label>
+                                    <select class="exemption-select" :data-line-index="line._index">
+                                        <option value="">— Sélectionner ou saisir —</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <button type="button" @click="addLine" class="outline btn-sm mb-1">+ Ajouter une ligne</button>
+                <hr>
+                <h4>Mentions obligatoires</h4>
+                <div class="form-row">
+                    <div>
+                        <label>Indemnité de recouvrement (PMT)</label>
+                        <textarea name="note_pmt"
+                                  x-md="notePmt"
+                                  readonly
+                                  class="note-input"
+                                  :title="notePmt"
+                                  rows="1"
+                                  @focus="onLineFocus"
+                                  @blur="onLineBlur"></textarea>
+                    </div>
+                    <div>
+                        <label>Pénalités de retard (PMD)</label>
+                        <textarea name="note_pmd"
+                                  x-md="notePmd"
+                                  class="note-input"
+                                  :title="notePmd"
+                                  rows="1"
+                                  @input="onLineInput"
+                                  @focus="onLineFocus"
+                                  @blur="onLineBlur"></textarea>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div>
+                        <label>Escompte (AAB)</label>
+                        <textarea name="note_aab"
+                                  x-md="noteAab"
+                                  class="note-input"
+                                  :title="noteAab"
+                                  rows="1"
+                                  @input="onLineInput"
+                                  @focus="onLineFocus"
+                                  @blur="onLineBlur"></textarea>
+                    </div>
+                    <div>
+                        <label>Notes supplémentaires</label>
+                        <textarea name="notes_extra"
+                                  class="note-input"
+                                  placeholder="Notes libres..."
+                                  rows="1"
+                                  @input="onLineInput"
+                                  @focus="onLineFocus"
+                                  @blur="onLineBlur"></textarea>
+                    </div>
+                </div>
+                <!-- Hidden computed fields -->
+                <input type="hidden" name="total_net_amount" :value="totals.totalNetAmount">
+                <input type="hidden" name="total_vat_amount" :value="totals.vatAmount">
+                <input type="hidden" name="total_with_vat" :value="totals.totalGrossAmount">
+                <input type="hidden" name="vat_lines_json" :value="vatLinesJson">
+                <hr>
+                <button type="button" @click="submitForm" class="btn-submit-full">
+                    {% if invoice %}
+                        Enregistrer
+                    {% else %}
+                        Créer le brouillon
+                    {% endif %}
+                </button>
+            </form>
+        </div>
+        <!-- Preview Panel -->
+        <div class="preview-panel">
+            <h3>Aperçu</h3>
+            <div class="mb-1">
+                <div class="preview-total-label">Total TTC</div>
+                <div class="preview-total-value" x-text="totalGrossDisplay"></div>
+            </div>
+            <table class="preview-table">
+                <thead>
+                    <tr>
+                        <th>Désignation</th>
+                        <th class="text-right">Montant HT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="(line, index) in lines" :key="index">
+                        <tr>
+                            <td x-text="line._displayName"></td>
+                            <td class="text-right" x-text="line._netDisplay"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+            <hr>
+            <table class="preview-table">
+                <tr>
+                    <td>Total HT</td>
+                    <td class="text-right text-bold" x-text="totalNetDisplay"></td>
+                </tr>
+                <template x-for="(vat, vidx) in vatLines" :key="vidx">
+                    <tr>
+                        <td x-text="vat._label"></td>
+                        <td class="text-right" x-text="vat._amountDisplay"></td>
+                    </tr>
+                </template>
+                <tr class="totals-row-final">
+                    <td>
+                        <strong>Total TTC</strong>
+                    </td>
+                    <td class="totals-value-primary" x-text="totalGrossDisplay"></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    <script src="{% static 'js/invoice-calculator.js' %}"></script>
+    <script>
+document.addEventListener('alpine:init', function() {
+    var EU_COUNTRIES = [
+        'AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','EL',
+        'HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE'
+    ];
+
+    var EXEMPTION_REASONS = {
+        E: [
+            'Exonéré — Art. 261 du CGI',
+            'Exonéré — Art. 261-1-1° CGI (Activités médicales)',
+            'Exonéré — Art. 261-4-1° CGI (Enseignement)',
+            'Exonéré — Art. 261-4-4°-a CGI (Formation professionnelle)',
+            'Exonéré — Art. 261-7-1° CGI (Organismes à but non lucratif)',
+            'Exonéré — Art. 261 B CGI (Groupements de moyens)',
+            'Exonéré — Art. 261 C CGI (Opérations bancaires et financières)',
+            'Exonéré — Art. 261 D CGI (Locations immobilières)',
+            'Exonéré — Art. 261 E CGI (Opérations immobilières)',
+            'Exonéré — Art. 262 CGI (Opérations d\'exportation)',
+        ],
+        K: [
+            'Livraison intracommunautaire — Art. 262 ter-I CGI',
+            'Prestation intracommunautaire — Art. 259 B CGI',
+            'Intra-Community supply — Directive 2006/112/CE art. 138',
+        ],
+        G: [
+            'Exportation — Art. 262-I CGI',
+            'Livraison en franchise — Art. 275 CGI',
+            'Export outside the EU — Directive 2006/112/CE art. 146',
+        ],
+        AE: [
+            'Autoliquidation — Art. 283-1 CGI',
+            'Autoliquidation — Art. 283-2 CGI (Sous-traitance BTP)',
+            'Autoliquidation — Art. 283-2 nonies CGI',
+            'Autoliquidation — Directive 2006/112/CE art. 194',
+            'Autoliquidation — Directive 2006/112/CE art. 196',
+        ],
+    };
+
+    var TS_EXEMPTION_DEFAULTS = {
+        allowEmptyOption: true,
+        openOnFocus: true,
+        selectOnTab: true,
+        placeholder: 'Rechercher ou saisir\u2026',
+        create: true,
+        maxItems: 1,
+        render: {
+            no_results: function(data, escape) {
+                return '<div class="no-results">Aucun résultat pour \u00ab\u00a0' + escape(data.input) + '\u00a0\u00bb</div>';
+            },
+            option_create: function(data, escape) {
+                return '<div class="create">Ajouter : <strong>' + escape(data.input) + '</strong></div>';
+            }
+        },
+    };
+
+    Alpine.data('invoiceForm', function() {
+        var initData = JSON.parse(document.getElementById('invoice-initial').textContent);
+        var today = new Date().toISOString().slice(0, 10);
+
+        var existingLines = initData.lines.map(function(l) {
+            return {
+                itemName: l.itemName,
+                quantity: l.quantity,
+                unitNetPrice: parseFloat(l.unitNetPrice).toFixed(2),
+                manualVatRate: parseFloat(l.manualVatRate).toFixed(2),
+                vatCategory: l.vatCategory,
+                exemptionReason: l.exemptionReason,
+                _manualCategory: parseFloat(l.manualVatRate) === 0,
+            };
+        });
+
+        return {
+            supplierId: initData.supplierId,
+            customerId: initData.customerId,
+            supplierCountry: 'FR',
+            customerCountry: '',
+            issueDate: initData.issueDate || today,
+            dueDate: initData.dueDate,
+            expectedDueDate: '',
+            dueDateManuallySet: initData.hasDueDate,
+            notePmt: initData.notes.pmt,
+            notePmd: initData.notes.pmd,
+            noteAab: initData.notes.aab,
+            paymentTermsDays: null,
+            paymentTermsEom: false,
+            lines: existingLines.length > 0 ? existingLines : [
+                { itemName: '', quantity: '1', unitNetPrice: '0', manualVatRate: '20.00', vatCategory: 'S', exemptionReason: '' }
+            ],
+            totals: { totalNetAmount: '0.00', vatAmount: '0.00', totalGrossAmount: '0.00' },
+            vatLines: [],
+
+            // --- Getters for CSP-safe templates ---
+
+            get showDueDateWarning() {
+                return this.expectedDueDate && this.dueDate && this.dueDate !== this.expectedDueDate;
+            },
+
+            get canRemoveLine() {
+                return this.lines.length > 1;
+            },
+
+            get totalGrossDisplay() {
+                return this.totals.totalGrossAmount + '\u00a0\u20ac';
+            },
+
+            get totalNetDisplay() {
+                return this.totals.totalNetAmount + '\u00a0\u20ac';
+            },
+
+            get vatLinesJson() {
+                return JSON.stringify(this.vatLines);
+            },
+
+            // --- Pre-compute derived line fields for CSP-safe templates ---
+            // (CSP build only supports dot-notation property access, no function calls with args)
+
+            _updateLineFields() {
+                for (var i = 0; i < this.lines.length; i++) {
+                    var line = this.lines[i];
+                    var prefix = 'line_' + i + '_';
+                    line._index = i;
+                    line._label = '#' + (i + 1);
+                    line._f_item_name = prefix + 'item_name';
+                    line._f_quantity = prefix + 'quantity';
+                    line._f_unit_price = prefix + 'unit_price';
+                    line._f_vat_rate = prefix + 'vat_rate';
+                    line._f_net_amount = prefix + 'net_amount';
+                    line._f_vat_category = prefix + 'vat_category';
+                    line._f_exemption = prefix + 'exemption_reason';
+                    line._netAmount = InvoiceCalculator.lineNetAmount(line.quantity, line.unitNetPrice);
+                    line._displayName = line.itemName || '(sans nom)';
+                    line._netDisplay = line._netAmount + '\u00a0\u20ac';
+                    line._isZeroVat = parseFloat(line.manualVatRate) === 0;
+                }
+            },
+
+            _updateVatLineFields() {
+                for (var i = 0; i < this.vatLines.length; i++) {
+                    var vl = this.vatLines[i];
+                    vl._label = 'TVA ' + vl.manualRate + '\u00a0%';
+                    vl._amountDisplay = vl.vatAmount + '\u00a0\u20ac';
+                }
+            },
+
+            applyExpectedDueDate() {
+                this.dueDate = this.expectedDueDate;
+            },
+
+            submitForm(event) {
+                event.currentTarget.closest('form').requestSubmit();
+            },
+
+            onSupplierChange(event) {
+                this.supplierId = event.target.value;
+                this.loadSupplierDefaults();
+                this.updateCountries();
+            },
+
+            onCustomerChange() {
+                this.updateCountries();
+                this.updatePreview();
+            },
+
+            onIssueDateChange() {
+                this.updatePreview();
+                this.computeDueDate();
+            },
+
+            onVatRateChange(event) {
+                var index = parseInt(event.target.dataset.lineIndex);
+                if (!isNaN(index)) this.lines[index]._manualCategory = false;
+                this.recalculate();
+            },
+
+            onRemoveLine(event) {
+                var index = parseInt(event.currentTarget.dataset.lineIndex);
+                if (!isNaN(index)) this.removeLine(index);
+            },
+
+            onCatalogChange(event) {
+                var index = parseInt(event.target.dataset.lineIndex);
+                this.applyProduct(event, index);
+            },
+
+            onLineInput(event) {
+                this.recalculate();
+                this.autoGrow(event.target);
+            },
+
+            onLineFocus(event) {
+                var self = this;
+                this.$nextTick(function() { self.autoGrow(event.target); });
+            },
+
+            onLineBlur(event) {
+                this.resetGrow(event.target);
+            },
+
+            // --- Core logic (unchanged) ---
+
+            init() {
+                this.recalculate();
+                this.supplierId = document.getElementById('supplier_id').value;
+                this.updateCountries(false);
+                if (this.supplierId) this.loadSupplierDefaults();
+                this._initExemptionObserver();
+            },
+
+            _initExemptionObserver() {
+                var self = this;
+                // Initialize TomSelect on exemption selects when they appear in DOM
+                var observer = new MutationObserver(function() {
+                    var selects = self.$el.querySelectorAll('.exemption-select:not(.tomselected)');
+                    selects.forEach(function(el) {
+                        var idx = parseInt(el.dataset.lineIndex);
+                        if (isNaN(idx)) return;
+                        var line = self.lines[idx];
+                        if (!line) return;
+                        self._initExemptionTs(el, line);
+                    });
+                });
+                observer.observe(this.$el, { childList: true, subtree: true });
+            },
+
+            _initExemptionTs(el, line) {
+                var self = this;
+                var reasons = EXEMPTION_REASONS[line.vatCategory] || [];
+                var opts = reasons.map(function(r) { return { value: r, text: r }; });
+                if (line.exemptionReason && !reasons.includes(line.exemptionReason)) {
+                    opts.unshift({ value: line.exemptionReason, text: line.exemptionReason });
+                }
+                var ts = new TomSelect(el, Object.assign({}, TS_EXEMPTION_DEFAULTS, {
+                    options: opts,
+                    items: line.exemptionReason ? [line.exemptionReason] : [],
+                    onChange: function(value) {
+                        line.exemptionReason = value;
+                        self.recalculate();
+                    }
+                }));
+                el._ts = ts;
+                el._tsCat = line.vatCategory;
+                el._lineRef = line;
+
+                // Watch for category changes
+                var watchInterval = setInterval(function() {
+                    if (!document.contains(el)) { clearInterval(watchInterval); return; }
+                    if (el._tsCat === el._lineRef.vatCategory) return;
+                    el._tsCat = el._lineRef.vatCategory;
+                    ts.clear(true);
+                    ts.clearOptions();
+                    var newReasons = EXEMPTION_REASONS[el._lineRef.vatCategory] || [];
+                    newReasons.forEach(function(r) { ts.addOption({ value: r, text: r }); });
+                    if (el._lineRef.exemptionReason) {
+                        if (!newReasons.includes(el._lineRef.exemptionReason)) {
+                            ts.addOption({ value: el._lineRef.exemptionReason, text: el._lineRef.exemptionReason });
+                        }
+                        ts.addItem(el._lineRef.exemptionReason, true);
+                    }
+                    ts.refreshOptions(false);
+                }, 200);
+            },
+
+            async loadSupplierDefaults() {
+                if (!this.supplierId) return;
+                try {
+                    var resp = await fetch('/suppliers/' + this.supplierId + '/defaults/');
+                    if (!resp.ok) return;
+                    var d = await resp.json();
+                    this.notePmt = d.note_pmt || '';
+                    this.notePmd = d.note_pmd || '';
+                    this.noteAab = d.note_aab || '';
+                    this.paymentTermsDays = d.payment_terms_days;
+                    this.paymentTermsEom = d.payment_terms_end_of_month;
+                    this.computeDueDate();
+                } catch (e) { /* silently ignore */ }
+            },
+
+            computeDueDate() {
+                if (!this.paymentTermsDays || !this.issueDate) return;
+                var d = new Date(this.issueDate);
+                d.setDate(d.getDate() + this.paymentTermsDays);
+                if (this.paymentTermsEom) {
+                    d.setMonth(d.getMonth() + 1, 0);
+                }
+                var yyyy = d.getFullYear();
+                var mm = String(d.getMonth() + 1).padStart(2, '0');
+                var dd = String(d.getDate()).padStart(2, '0');
+                this.expectedDueDate = yyyy + '-' + mm + '-' + dd;
+                if (!this.dueDateManuallySet || !this.dueDate) {
+                    this.dueDate = this.expectedDueDate;
+                }
+            },
+
+            checkDueDate() {
+                if (this.dueDate) this.dueDateManuallySet = true;
+            },
+
+            updateCountries(force) {
+                if (force === undefined) force = true;
+                var supSel = document.getElementById('supplier_id');
+                var custSel = document.getElementById('customer_id');
+                if (supSel && supSel.selectedOptions[0]) {
+                    this.supplierCountry = supSel.selectedOptions[0].dataset.country || 'FR';
+                }
+                if (custSel && custSel.selectedOptions[0] && custSel.selectedOptions[0].value) {
+                    this.customerCountry = custSel.selectedOptions[0].dataset.country || 'FR';
+                } else {
+                    this.customerCountry = '';
+                }
+                var self = this;
+                this.lines.forEach(function(line) { self.resolveVatExemption(line, force); });
+                this.recalculate();
+            },
+
+            resolveVatExemption(line, force) {
+                var rate = parseFloat(line.manualVatRate);
+                if (rate > 0) {
+                    line.vatCategory = 'S';
+                    line.exemptionReason = '';
+                    line._manualCategory = false;
+                    return;
+                }
+                if (line._manualCategory && !force) return;
+                var sup = this.supplierCountry || 'FR';
+                var cust = this.customerCountry;
+                if (!cust || sup === cust) {
+                    line.vatCategory = 'E';
+                    return;
+                }
+                if (EU_COUNTRIES.includes(sup) && EU_COUNTRIES.includes(cust)) {
+                    line.vatCategory = 'K';
+                    line.exemptionReason = 'Livraison intracommunautaire — Art. 262 ter-I CGI';
+                    return;
+                }
+                line.vatCategory = 'G';
+                line.exemptionReason = 'Exportation — Art. 262-I CGI';
+            },
+
+            onCategoryChange(event) {
+                var index = parseInt(event.target.dataset.lineIndex);
+                var line = this.lines[index];
+                if (!line) return;
+                line._manualCategory = true;
+                var defaults = { AE: 'Autoliquidation — Art. 283-1 CGI', K: 'Livraison intracommunautaire — Art. 262 ter-I CGI', G: 'Exportation — Art. 262-I CGI' };
+                if (defaults[line.vatCategory]) {
+                    line.exemptionReason = defaults[line.vatCategory];
+                } else {
+                    var allAuto = Object.values(defaults);
+                    if (allAuto.includes(line.exemptionReason) || ['Reverse charge', 'Intra-Community supply', 'Export outside the EU'].includes(line.exemptionReason)) {
+                        line.exemptionReason = '';
+                    }
+                }
+                this.recalculate();
+            },
+
+            addLine() {
+                this.lines.push({ itemName: '', quantity: '1', unitNetPrice: '0', manualVatRate: '20.00', vatCategory: 'S', exemptionReason: '' });
+                this._updateLineFields();
+            },
+
+            removeLine(index) {
+                this.lines.splice(index, 1);
+                this.recalculate();
+            },
+
+            applyProduct(event, index) {
+                var opt = event.target.selectedOptions[0];
+                if (!opt || !opt.value) return;
+                var line = this.lines[index];
+                line.itemName = opt.dataset.name || '';
+                if (opt.dataset.price) line.unitNetPrice = parseFloat(opt.dataset.price).toFixed(2);
+                if (opt.dataset.vat) line.manualVatRate = parseFloat(opt.dataset.vat).toFixed(2);
+                this.recalculate();
+            },
+
+            lineNetAmount(line) {
+                return InvoiceCalculator.lineNetAmount(line.quantity, line.unitNetPrice);
+            },
+
+            recalculate() {
+                var self = this;
+                this.lines.forEach(function(line) { self.resolveVatExemption(line); });
+                var result = InvoiceCalculator.calculateTotals(this.lines);
+                this.totals = result.totals;
+                this.vatLines = result.vatLines;
+                this._updateLineFields();
+                this._updateVatLineFields();
+            },
+
+            autoGrow(el) {
+                el.style.height = 'auto';
+                el.style.height = el.scrollHeight + 'px';
+            },
+
+            resetGrow(el) {
+                el.style.height = '';
+            },
+
+            updatePreview() {
+                this.recalculate();
+            },
+
+            beforeSubmit(event) {
+                this.recalculate();
+                var field = event.target.querySelector('[name="vat_lines_json"]');
+                if (field) field.value = JSON.stringify(this.vatLines);
+            }
+        };
+    });
+});
+    </script>
+{% endblock content %}

@@ -1,0 +1,124 @@
+[project]
+name = "factpulse-billing-app"
+version = "1.0.0"
+description = "Application de facturation B2B conforme Factur-X (EN 16931)"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=5.2,<5.3",
+    "djangorestframework>=3.16,<4.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "celery>=5.4,<6.0",
+    "django-celery-beat>=2.7,<3.0",
+    "redis>=5.2,<8.0",
+    "django-storages[boto3]>=1.14,<2.0",
+    "djangorestframework-simplejwt>=5.3,<6.0",
+    "django-cors-headers>=4.6,<5.0",
+    "django-filter>=24.0",
+    "drf-spectacular>=0.28,<1.0",
+    "WeasyPrint>=63.0",
+    "Pillow>=11.0",
+    "python-dotenv>=1.0",
+    "argon2-cffi>=23.1",
+    "whitenoise>=6.7",
+    "requests>=2.32,<3.0",
+    "cryptography>=44.0",
+    "gunicorn>=23.0,<26.0",
+    "markdown>=3.7,<4.0",
+    "mcp[cli]>=1.0,<2.0",
+    "django-oauth-toolkit>=3.0,<4.0",
+]
+
+[project.optional-dependencies]
+stripe = ["stripe>=8.0,<10.0"]
+gocardless = ["gocardless-pro>=3.0,<4.0"]
+payments = ["stripe>=8.0,<10.0", "gocardless-pro>=3.0,<4.0"]
+sentry = ["sentry-sdk[django,celery,starlette]>=2.0,<3.0"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-django>=4.8",
+    "pytest-cov>=6.0",
+    "pytest-asyncio>=0.24",
+    "factory-boy>=3.3",
+    "ipdb>=0.13",
+    "django-debug-toolbar>=4.4",
+    "pre-commit>=4.0",
+    "ruff>=0.15",
+]
+
+[tool.ruff]
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "staticfiles",
+    "migrations",
+    "*.pyc",
+]
+line-length = 88
+indent-width = 4
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "DJ",  # flake8-django
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ruff.lint.isort]
+known-first-party = ["apps", "config"]
+
+[tool.bandit]
+exclude_dirs = ["tests", "migrations", ".venv", "venv"]
+skips = ["B101"]
+
+[tool.djlint]
+profile = "django"
+ignore = ""
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.dev"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "ignore::jwt.warnings.InsecureKeyLengthWarning",
+]
+
+[tool.coverage.run]
+source = ["apps"]
+branch = true
+omit = [
+    "*/migrations/*",
+    "*/management/commands/seed_demo.py",
+    "apps/*/apps.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+fail_under = 90
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

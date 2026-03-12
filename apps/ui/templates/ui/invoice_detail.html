@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+{% block title %}
+    {{ invoice.number|default:"Brouillon" }} — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>
+            {% if invoice.invoice_type_code == "381" %}
+                Avoir
+            {% else %}
+                Facture
+            {% endif %}
+            {{ invoice.number|default:"Brouillon" }}
+        </h1>
+        <div class="topbar-actions">
+            {% if invoice.status == "draft" %}
+                <a href="{% url 'ui:invoice_edit' uuid=invoice.uuid %}"
+                   role="button"
+                   class="outline">Modifier</a>
+                <form method="post"
+                      action="{% url 'ui:invoice_validate' uuid=invoice.uuid %}"
+                      class="form-inline"
+                      onsubmit="this.querySelector('button').disabled=true; this.querySelector('button').setAttribute('aria-busy','true');">
+                    {% csrf_token %}
+                    <button type="submit">Valider</button>
+                </form>
+                {% if not invoice.number %}
+                    <form method="post"
+                          action="{% url 'ui:invoice_delete' uuid=invoice.uuid %}"
+                          class="form-inline"
+                          onsubmit="return confirm('Supprimer ce brouillon ?')">
+                        {% csrf_token %}
+                        <button type="submit" class="secondary">Supprimer</button>
+                    </form>
+                {% endif %}
+            {% endif %}
+            {% if invoice.status == "validated" %}
+                <form method="post"
+                      action="{% url 'ui:invoice_transmit' uuid=invoice.uuid %}"
+                      class="form-inline"
+                      onsubmit="if(!confirm('Transmettre cette facture à la plateforme agréée ? Cette action est irréversible.')) return false; this.querySelector('button').disabled=true; this.querySelector('button').setAttribute('aria-busy','true');">
+                    {% csrf_token %}
+                    <button type="submit" title="Plateforme agréée">Transmettre (PA)</button>
+                </form>
+                {% if stripe_enabled %}
+                    <button x-data="paymentLink"
+                            data-invoice-uuid="{{ invoice.uuid }}"
+                            @click="generate"
+                            class="outline"
+                            :disabled="loading">
+                        <span x-show="_notLoading">Lien de paiement</span>
+                        <span x-show="loading" aria-busy="true">Génération...</span>
+                    </button>
+                {% endif %}
+                <form method="post"
+                      action="{% url 'ui:invoice_cancel' uuid=invoice.uuid %}"
+                      class="form-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="secondary">Annuler (avoir)</button>
+                </form>
+            {% endif %}
+            {% if invoice.status == "transmitting" %}<button disabled aria-busy="true">Transmission en cours…</button>{% endif %}
+            {% if invoice.status == "transmitted" or invoice.status == "accepted" %}
+                {% if stripe_enabled %}
+                    <button x-data="paymentLink"
+                            data-invoice-uuid="{{ invoice.uuid }}"
+                            @click="generate"
+                            class="outline"
+                            :disabled="loading">
+                        <span x-show="_notLoading">Lien de paiement</span>
+                        <span x-show="loading" aria-busy="true">Génération...</span>
+                    </button>
+                {% endif %}
+                <form method="post"
+                      action="{% url 'ui:invoice_mark_paid' uuid=invoice.uuid %}"
+                      class="form-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="outline">Marquer payée</button>
+                </form>
+            {% endif %}
+            {% if invoice.status == "draft" %}
+                <button x-data="pdfDownload"
+                        data-invoice-uuid="{{ invoice.uuid }}"
+                        @click="download"
+                        class="outline"
+                        :disabled="loading">
+                    <span x-show="_notLoading">Télécharger PDF</span>
+                    <span x-show="loading">Génération...</span>
+                </button>
+            {% elif invoice.pdf_file %}
+                <a href="{% url 'invoice-pdf' uuid=invoice.uuid %}"
+                   role="button"
+                   class="outline"
+                   target="_blank">Télécharger PDF</a>
+            {% endif %}
+        </div>
+    </div>
+    {% if invoice.factpulse_error %}
+        <div class="error-box">
+            <strong>Erreur FactPulse :</strong>
+            {{ invoice.factpulse_error.message|default:invoice.factpulse_error }}
+            {% if invoice.factpulse_error.errors %}
+                <table class="error-details">
+                    <thead>
+                        <tr>
+                            <th>Champ</th>
+                            <th>Erreur</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for err in invoice.factpulse_error.errors %}
+                            <tr>
+                                <td>
+                                    <code>{{ err.item }}</code>
+                                </td>
+                                <td>{{ err.reason }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+        </div>
+    {% endif %}
+    {% if invoice.ereporting_error %}
+        <div class="error-box">
+            <strong>Erreur e-reporting :</strong>
+            {{ invoice.ereporting_error.message|default:invoice.ereporting_error }}
+        </div>
+    {% endif %}
+    <div class="detail-grid">
+        <div>
+            <div class="detail-status">
+                <span class="badge badge-{{ invoice.status }}">{{ invoice.get_status_display }}</span>
+                {% if invoice.detected_flow %}<span class="badge badge-flow">{{ invoice.get_detected_flow_display }}</span>{% endif %}
+                {% if invoice.ereporting_status %}
+                    <span class="badge badge-ereporting-{{ invoice.ereporting_status }}">E-reporting: {{ invoice.get_ereporting_status_display }}</span>
+                {% endif %}
+                <span class="text-muted">Version {{ invoice.version }}</span>
+            </div>
+            <!-- Parties -->
+            <div class="detail-parties">
+                <div class="bg-elevated">
+                    <div class="meta-label meta-label-spaced">Émetteur</div>
+                    <strong>{{ data.supplier.name|default:"—" }}</strong>
+                    <br>
+                    {% if data.supplier.postalAddress %}
+                        {{ data.supplier.postalAddress.lineOne }}
+                        <br>
+                        {{ data.supplier.postalAddress.postalCode }} {{ data.supplier.postalAddress.city }}
+                    {% endif %}
+                    {% if data.supplier.vatNumber %}
+                        <br>
+                        TVA: {{ data.supplier.vatNumber }}
+                    {% endif %}
+                </div>
+                <div class="bg-elevated">
+                    <div class="meta-label meta-label-spaced">Destinataire</div>
+                    <strong>{{ data.recipient.name|default:"—" }}</strong>
+                    <br>
+                    {% if data.recipient.postalAddress %}
+                        {{ data.recipient.postalAddress.lineOne }}
+                        <br>
+                        {{ data.recipient.postalAddress.postalCode }} {{ data.recipient.postalAddress.city }}
+                    {% endif %}
+                    {% if data.recipient.vatNumber %}
+                        <br>
+                        TVA: {{ data.recipient.vatNumber }}
+                    {% endif %}
+                </div>
+            </div>
+            <!-- Meta -->
+            <div class="detail-meta">
+                <div>
+                    <div class="meta-label">Date d'émission</div>
+                    <div>{{ invoice.issue_date|date:"d/m/Y"|default:"—" }}</div>
+                </div>
+                <div>
+                    <div class="meta-label">Date d'échéance</div>
+                    <div>{{ invoice.due_date|date:"d/m/Y"|default:"—" }}</div>
+                </div>
+                <div>
+                    <div class="meta-label">Devise</div>
+                    <div>{{ invoice.currency_code }}</div>
+                </div>
+                <div>
+                    <div class="meta-label">Type</div>
+                    <div>
+                        {% if invoice.invoice_type_code == "381" %}
+                            Avoir
+                        {% else %}
+                            Facture
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <!-- Lines -->
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Désignation</th>
+                        <th class="text-right">Qté</th>
+                        <th class="text-right">Prix unit. HT</th>
+                        <th class="text-right">TVA</th>
+                        <th class="text-right">Montant HT</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for line in data.invoiceLines %}
+                        <tr>
+                            <td>{{ line.lineNumber|default:forloop.counter }}</td>
+                            <td>{{ line.itemName }}</td>
+                            <td class="text-right">{{ line.quantity }}</td>
+                            <td class="text-right">{{ line.unitNetPrice|floatformat:2 }}&nbsp;€</td>
+                            <td class="text-right">{{ line.manualVatRate|default:"20.00"|floatformat:2 }}&nbsp;%</td>
+                            <td class="text-right">{{ line.lineNetAmount|default:"—"|floatformat:2 }}&nbsp;€</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <!-- Totals -->
+            <div class="detail-totals-wrap">
+                <table class="detail-totals-table">
+                    <tr>
+                        <td>Total HT</td>
+                        <td class="text-right totals-value">{{ data.totals.totalNetAmount|default:"—" }}&nbsp;€</td>
+                    </tr>
+                    <tr>
+                        <td>Total TVA</td>
+                        <td class="text-right totals-value">{{ data.totals.vatAmount|default:"—" }}&nbsp;€</td>
+                    </tr>
+                    <tr class="totals-row-final">
+                        <td>Total TTC</td>
+                        <td class="totals-value-primary">{{ data.totals.totalGrossAmount|default:"—" }}&nbsp;€</td>
+                    </tr>
+                </table>
+            </div>
+            {% if data.notes %}
+                <div class="detail-notes">
+                    <h4>Mentions</h4>
+                    {% for note in data.notes %}
+                        <div class="bg-elevated detail-note-item">
+                            {% if note.subjectCode %}<span class="badge badge-draft detail-note-badge">{{ note.subjectCode }}</span>{% endif %}
+                            {{ note.content }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            {% if invoice.preceding_invoice %}
+                <div class="bg-warning detail-preceding">
+                    Avoir lié à la facture
+                    <a href="{% url 'ui:invoice_detail' uuid=invoice.preceding_invoice.uuid %}">
+                        {{ invoice.preceding_invoice.number|default:invoice.preceding_invoice.uuid }}
+                    </a>
+                </div>
+            {% endif %}
+            {% if invoice.payment_date %}
+                <div class="bg-success detail-paid">
+                    Payée le {{ invoice.payment_date|date:"d/m/Y" }}
+                    {% if invoice.payment_reference %}— Réf: {{ invoice.payment_reference }}{% endif %}
+                    {% if invoice.payment_amount %}— {{ invoice.payment_amount|floatformat:2 }}&nbsp;€{% endif %}
+                </div>
+            {% endif %}
+        </div>
+        <!-- Sidebar: Timeline -->
+        <div>
+            <h3>Historique</h3>
+            <div class="timeline">
+                {% for log in audit_logs %}
+                    <div class="timeline-item">
+                        <div>
+                            <strong>
+                                {% if log.action == "cdar_event" %}
+                                    CDAR {{ log.details.status_code }}
+                                {% elif log.action == "cdar_paid_submitted" %}
+                                    CDAR Encaissée soumise
+                                {% elif log.action == "cdar_paid_error" %}
+                                    CDAR Erreur soumission
+                                {% elif log.action == "cdar_paid_skipped" %}
+                                    CDAR Ignorée
+                                {% elif log.action == "ereporting_submitted" %}
+                                    E-reporting soumis (flux {{ log.details.flux_type }})
+                                {% elif log.action == "ereporting_error" %}
+                                    Erreur e-reporting
+                                {% elif log.action == "status_change" %}
+                                    {{ log.old_status }} → {{ log.new_status }}
+                                {% elif log.action == "flow_submitted" %}
+                                    Flux soumis à la PA
+                                {% elif log.action == "created" %}
+                                    Création
+                                {% elif log.action == "data_update" %}
+                                    Modification
+                                {% elif log.action == "delete" %}
+                                    Suppression
+                                {% else %}
+                                    {{ log.action }}
+                                {% endif %}
+                            </strong>
+                        </div>
+                        {% if log.action == "cdar_event" %}<div>{{ log.details.status_description }}</div>{% endif %}
+                        <div class="time">{{ log.timestamp|date:"d/m/Y H:i" }}</div>
+                    </div>
+                {% empty %}
+                    <div class="text-muted">Aucun historique</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <script>
+    document.addEventListener('alpine:init', function() {
+        Alpine.data('paymentLink', function() {
+            return {
+                loading: false,
+                _notLoading: true,
+                _setLoading: function(val) {
+                    this.loading = val;
+                    this._notLoading = !val;
+                },
+                generate: function() {
+                    var self = this;
+                    var uuid = self.$el.dataset.invoiceUuid;
+                    self._setLoading(true);
+                    fetch('/api/v1/payments/invoices/' + uuid + '/checkout/', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value
+                                || (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '',
+                        },
+                        body: JSON.stringify({}),
+                    }).then(function(resp) {
+                        return resp.json().then(function(data) {
+                            if (resp.ok && data.checkout_url) {
+                                navigator.clipboard.writeText(data.checkout_url);
+                                alert('Lien de paiement copié dans le presse-papier !\n\n' + data.checkout_url);
+                            } else {
+                                alert('Erreur : ' + ((data.error && data.error.message) || 'Impossible de générer le lien.'));
+                            }
+                        });
+                    }).catch(function() {
+                        alert('Erreur réseau.');
+                    }).then(function() {
+                        self._setLoading(false);
+                    });
+                }
+            };
+        });
+
+        Alpine.data('pdfDownload', function() {
+            return {
+                loading: false,
+                _notLoading: true,
+                _setLoading: function(val) {
+                    this.loading = val;
+                    this._notLoading = !val;
+                },
+                download: function() {
+                    var self = this;
+                    var uuid = self.$el.dataset.invoiceUuid;
+                    self._setLoading(true);
+                    var url = '/api/v1/invoices/' + uuid + '/pdf/';
+
+                    function poll(attempts) {
+                        fetch(url, { credentials: 'same-origin' }).then(function(resp) {
+                            if (resp.status === 200) {
+                                resp.blob().then(function(blob) {
+                                    var a = document.createElement('a');
+                                    a.href = URL.createObjectURL(blob);
+                                    a.download = uuid + '.pdf';
+                                    a.click();
+                                    self._setLoading(false);
+                                });
+                                return;
+                            }
+                            if (resp.status === 202 && attempts < 15) {
+                                setTimeout(function() { poll(attempts + 1); }, 2000);
+                                return;
+                            }
+                            self._setLoading(false);
+                            alert('Impossible de générer le PDF.');
+                        }).catch(function() {
+                            self._setLoading(false);
+                            alert('Erreur réseau.');
+                        });
+                    }
+                    poll(0);
+                }
+            };
+        });
+    });
+    </script>
+{% endblock content %}

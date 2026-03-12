@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}
+    Produits — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Produits</h1>
+        <div class="topbar-actions">
+            {% if show_archived %}
+                <a href="{% url 'ui:product_list' %}"
+                   role="button"
+                   class="outline btn-sm">Masquer archivés</a>
+            {% else %}
+                <a href="{% url 'ui:product_list' %}?archived=1"
+                   role="button"
+                   class="outline btn-sm">Voir archivés</a>
+            {% endif %}
+            <a href="{% url 'ui:product_create' %}" role="button">Nouveau produit</a>
+        </div>
+    </div>
+    <input type="search"
+           placeholder="Rechercher..."
+           hx-get="{% url 'ui:product_list' %}"
+           hx-trigger="keyup changed delay:300ms"
+           hx-target="#product-table"
+           name="search">
+    <div id="product-table">{% include "ui/partials/product_table.html" %}</div>
+{% endblock content %}

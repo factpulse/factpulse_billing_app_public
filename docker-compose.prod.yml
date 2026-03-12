@@ -1,0 +1,22 @@
+# Production overlay — usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Le service web expose le port 8100 en local uniquement.
+# Placez un reverse proxy (nginx, Caddy, Traefik) devant 127.0.0.1:8100
+# pour gérer SSL et le routage par domaine.
+# Un exemple nginx est fourni dans nginx/example.conf.
+
+services:
+  billing-web:
+    container_name: factpulse_billing_web
+    ports:
+      - "127.0.0.1:8100:8000"
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.prod
+
+  celery-worker:
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.prod
+
+  celery-beat:
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings.prod

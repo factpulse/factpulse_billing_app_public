@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}
+    Créer un compte — FactPulse Billing
+{% endblock title %}
+{% block content_anonymous %}
+    <div class="login-container">
+        <h1 class="login-title">FactPulse Billing</h1>
+        {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
+        <form method="post">
+            {% csrf_token %}
+            <label for="id_org_name">Nom de l'organisation</label>
+            <input type="text"
+                   name="org_name"
+                   id="id_org_name"
+                   autofocus
+                   required
+                   value="{{ form_data.org_name|default:'' }}"
+                   placeholder="Mon Entreprise SAS">
+            <label for="id_email">Email</label>
+            <input type="email"
+                   name="email"
+                   id="id_email"
+                   required
+                   value="{{ form_data.email|default:'' }}"
+                   placeholder="vous@exemple.fr">
+            <label for="id_password">Mot de passe</label>
+            <input type="password"
+                   name="password"
+                   id="id_password"
+                   required
+                   minlength="8">
+            <label for="id_password_confirm">Confirmer le mot de passe</label>
+            <input type="password"
+                   name="password_confirm"
+                   id="id_password_confirm"
+                   required
+                   minlength="8">
+            <button type="submit" class="login-btn">Créer mon compte</button>
+        </form>
+        <p class="login-link">
+            Déjà un compte ? <a href="{% url 'ui:login' %}">Se connecter</a>
+        </p>
+    </div>
+{% endblock content_anonymous %}

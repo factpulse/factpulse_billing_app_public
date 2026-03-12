@@ -1,0 +1,54 @@
+{
+  "name": "FactPulse Billing",
+  "description": "B2B invoicing app compliant with Factur-X (EN 16931), connected to the FactPulse platform.",
+  "repository": "https://github.com/your-org/factpulse-billing-app",
+  "keywords": ["django", "invoicing", "factur-x", "en16931", "billing"],
+  "stack": "container",
+  "env": {
+    "SECRET_KEY": {
+      "description": "Django secret key for cryptographic signing.",
+      "generator": "secret"
+    },
+    "DJANGO_SETTINGS_MODULE": {
+      "description": "Django settings module.",
+      "value": "config.settings.prod"
+    },
+    "ALLOWED_HOSTS": {
+      "description": "Comma-separated list of allowed hostnames.",
+      "value": "*"
+    },
+    "SECURE_SSL_REDIRECT": {
+      "description": "Set to false if SSL is handled by the platform.",
+      "value": "false"
+    },
+    "DJANGO_SUPERUSER_EMAIL": {
+      "description": "Email for the initial admin account.",
+      "required": false
+    },
+    "DJANGO_SUPERUSER_PASSWORD": {
+      "description": "Password for the initial admin account.",
+      "required": false
+    }
+  },
+  "addons": ["heroku-postgresql:mini", "heroku-redis:mini"],
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    },
+    "worker": {
+      "quantity": 1,
+      "size": "basic",
+      "command": "uv run celery -A config worker -l info --concurrency 2"
+    }
+  },
+  "healthchecks": {
+    "web": [
+      {
+        "type": "startup",
+        "name": "healthz",
+        "path": "/healthz/"
+      }
+    ]
+  }
+}

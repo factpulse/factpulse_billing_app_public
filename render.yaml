@@ -1,0 +1,62 @@
+services:
+  - type: web
+    name: factpulse-billing
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz/
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DJANGO_SETTINGS_MODULE
+        value: config.settings.prod
+      - key: ALLOWED_HOSTS
+        value: .onrender.com
+      - key: CSRF_TRUSTED_ORIGINS
+        fromService:
+          type: web
+          name: factpulse-billing
+          property: host
+          # Override manually: https://your-app.onrender.com
+      - key: SECURE_SSL_REDIRECT
+        value: "false"
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: factpulse-db
+          property: host
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: factpulse-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: factpulse-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: factpulse-db
+          property: password
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: factpulse-db
+          property: port
+      - key: CELERY_BROKER_URL
+        fromService:
+          type: redis
+          name: factpulse-redis
+          property: connectionString
+
+  - type: worker
+    name: factpulse-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: uv run celery -A config worker -l info --concurrency 2
+    envVars:
+      - fromGroup: factpulse-shared
+
+databases:
+  - name: factpulse-db
+    plan: starter
+
+redis:
+  - name: factpulse-redis
+    plan: starter

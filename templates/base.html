@@ -1,0 +1,188 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="description"
+              content="FactPulse Billing — facturation électronique conforme EN16931">
+        <meta name="keywords" content="facturation, billing, EN16931, FactPulse">
+        <title>
+            {% block title %}
+                FactPulse Billing
+            {% endblock title %}
+        </title>
+        <link rel="icon"
+              type="image/svg+xml"
+              href="{% static 'favicon/favicon.svg' %}">
+        <link rel="icon"
+              type="image/png"
+              sizes="96x96"
+              href="{% static 'favicon/favicon-96x96.png' %}">
+        <link rel="shortcut icon" href="{% static 'favicon/favicon.ico' %}">
+        <link rel="apple-touch-icon"
+              sizes="180x180"
+              href="{% static 'favicon/apple-touch-icon.png' %}">
+        <link rel="manifest" href="{% static 'favicon/site.webmanifest' %}">
+        <script src="{% static 'vendor/htmx.min.js' %}"></script>
+        <script defer src="{% static 'vendor/alpine.min.js' %}"></script>
+        <link rel="stylesheet" href="{% static 'vendor/tom-select.css' %}">
+        <script src="{% static 'vendor/tom-select.min.js' %}"></script>
+        <script>
+    (function() {
+        var TS_DEFAULTS = {
+            allowEmptyOption: true,
+            openOnFocus: true,
+            selectOnTab: true,
+            placeholder: 'Rechercher\u2026',
+            onInitialize: function() {
+                var input = this.control_input;
+                if (input) {
+                    input.setAttribute('autocomplete', 'off');
+                    input.setAttribute('data-1p-ignore', '');
+                    input.setAttribute('data-lpignore', 'true');
+                    input.setAttribute('data-form-type', 'other');
+                }
+            },
+            render: {
+                no_results: function(data, escape) {
+                    return '<div class="no-results">Aucun résultat pour \u00ab\u00a0' + escape(data.input) + '\u00a0\u00bb</div>';
+                }
+            }
+        };
+        document.addEventListener('alpine:init', function() {
+            /* CSP-safe two-way binding (replaces x-model which breaks in CSP build) */
+            Alpine.directive('md', function(el, _ref, _ref2) {
+                var expression = _ref.expression;
+                var modifiers = _ref.modifiers;
+                var effect = _ref2.effect;
+                var cleanup = _ref2.cleanup;
+                var asNumber = modifiers.includes('number');
+                var path = expression.split('.');
+                var prop = path[path.length - 1];
+                function getContainer() {
+                    var obj = Alpine.$data(el);
+                    for (var i = 0; i < path.length - 1; i++) obj = obj[path[i]];
+                    return obj;
+                }
+                /* data → DOM */
+                effect(function() {
+                    var container = getContainer();
+                    var val = container[prop];
+                    if (el.type === 'checkbox') {
+                        el.checked = !!val;
+                    } else {
+                        var sv = val != null ? String(val) : '';
+                        if (el.value !== sv) el.value = sv;
+                    }
+                });
+                /* DOM → data */
+                var eventName = (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'radio') ? 'change' : 'input';
+                function handler() {
+                    var container = getContainer();
+                    if (el.type === 'checkbox') {
+                        container[prop] = el.checked;
+                    } else if (asNumber) {
+                        var n = parseFloat(el.value);
+                        container[prop] = isNaN(n) ? el.value : n;
+                    } else {
+                        container[prop] = el.value;
+                    }
+                }
+                el.addEventListener(eventName, handler);
+                cleanup(function() { el.removeEventListener(eventName, handler); });
+            });
+
+            Alpine.directive('ts', function(el, _ref, _ref2) {
+                var cleanup = _ref2.cleanup;
+                queueMicrotask(function() {
+                    if (!document.contains(el)) return;
+                    var userOpts = {};
+                    if (el.dataset.tsWrapperClass) userOpts.wrapperClass = el.dataset.tsWrapperClass;
+                    var opts = Object.assign({}, TS_DEFAULTS, userOpts);
+                    var ts = new TomSelect(el, opts);
+                    cleanup(function() { ts.destroy(); });
+                });
+            });
+        });
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('select[data-ts]:not(.tomselected)').forEach(function(el) {
+                new TomSelect(el, TS_DEFAULTS);
+            });
+        });
+    })();
+        </script>
+        <link rel="stylesheet" href="{% static 'fonts/inter/inter.css' %}">
+        <link rel="stylesheet" href="{% static 'css/main.css' %}">
+        {% block extra_head %}
+        {% endblock extra_head %}
+    </head>
+    <body>
+        {% if user.is_authenticated %}
+            <div class="app-layout">
+                <aside class="sidebar">
+                    <a href="{% url 'ui:dashboard' %}" class="logo">
+                        <img src="{% static 'images/logo/logo.png' %}"
+                             alt="FactPulse"
+                             width="712"
+                             height="512">
+                        <span>FactPulse App.</span>
+                    </a>
+                    <nav>
+                        <a href="{% url 'ui:dashboard' %}"
+                           {% if request.resolver_match.url_name == 'dashboard' %}class="active"{% endif %}>Tableau de bord</a>
+                        <a href="{% url 'ui:invoice_list' %}"
+                           {% if 'invoice' in request.resolver_match.url_name %}class="active"{% endif %}>Factures</a>
+                        <a href="{% url 'ui:customer_list' %}"
+                           {% if 'customer' in request.resolver_match.url_name %}class="active"{% endif %}>Clients</a>
+                        <a href="{% url 'ui:product_list' %}"
+                           {% if 'product' in request.resolver_match.url_name %}class="active"{% endif %}>Produits</a>
+                        <a href="{% url 'ui:supplier_list' %}"
+                           {% if 'supplier' in request.resolver_match.url_name %}class="active"{% endif %}>Fournisseurs</a>
+                        {% if is_owner %}
+                            <a href="{% url 'ui:pdp_settings' %}"
+                               {% if request.resolver_match.url_name == 'pdp_settings' %}class="active"{% endif %}>Plateforme agréée</a>
+                        {% endif %}
+                        <a href="{% url 'ui:guide' %}"
+                           {% if request.resolver_match.url_name == 'guide' %}class="active"{% endif %}>Guide</a>
+                        <a href="{% url 'ui:api_key_list' %}"
+                           {% if request.resolver_match.url_name == 'api_key_list' %}class="active"{% endif %}>Clés API</a>
+                    </nav>
+                    <div class="org-selector">
+                        {% if organizations %}
+                            <form method="post" action="{% url 'ui:switch_org' %}">
+                                {% csrf_token %}
+                                <select name="organization_id" onchange="this.form.submit()">
+                                    {% for org in organizations %}
+                                        <option value="{{ org.id }}"
+                                                {% if org.id == request.organization.id %}selected{% endif %}>
+                                            {{ org.name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </form>
+                        {% endif %}
+                        <div class="user-section">
+                            <div class="user-email">{{ user.get_full_name|default:user.email }}</div>
+                            <a href="{% url 'ui:logout' %}" class="logout-link">Déconnexion</a>
+                        </div>
+                    </div>
+                </aside>
+                <main class="main-content">
+                    {% if factpulse_degraded %}
+                        <div class="degraded-banner">
+                            Mode dégradé — configurez <code>FACTPULSE_API_URL</code>, <code>FACTPULSE_EMAIL</code> et <code>FACTPULSE_PASSWORD</code> pour activer la conformité 2026.
+                        </div>
+                    {% elif factpulse_sandbox %}
+                        <div class="sandbox-banner">Mode sandbox — la transmission et l'annuaire réel sont désactivés.</div>
+                    {% endif %}
+                    {% block content %}
+                    {% endblock content %}
+                </main>
+            </div>
+        {% else %}
+            {% block content_anonymous %}
+            {% endblock content_anonymous %}
+        {% endif %}
+    </body>
+</html>

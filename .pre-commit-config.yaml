@@ -1,0 +1,49 @@
+# Pre-commit hooks configuration
+# Installation: uv run pre-commit install
+# Documentation: https://pre-commit.com/
+
+repos:
+    # Ruff - Python linter and formatter (replaces Black, isort, flake8, etc.)
+    - repo: https://github.com/astral-sh/ruff-pre-commit
+      rev: v0.15.0
+      hooks:
+          # Run the linter
+          - id: ruff
+            args: [--fix]
+          # Run the formatter
+          - id: ruff-format
+
+    # djLint - Django template linter and formatter
+    - repo: https://github.com/Riverside-Healthcare/djLint
+      rev: v1.36.4
+      hooks:
+          - id: djlint-reformat-django
+            exclude: "templates/pdf/"
+          - id: djlint-django
+            exclude: "templates/pdf/"
+
+    # Standard pre-commit hooks
+    - repo: https://github.com/pre-commit/pre-commit-hooks
+      rev: v6.0.0
+      hooks:
+          - id: trailing-whitespace
+            exclude: ".*\\.svg$"
+          - id: end-of-file-fixer
+            exclude: "staticfiles/"
+          - id: check-yaml
+          - id: check-json
+          - id: check-toml
+          - id: check-added-large-files
+            args: [--maxkb=500]
+          - id: check-merge-conflict
+          - id: check-case-conflict
+          - id: mixed-line-ending
+            args: [--fix=lf]
+
+    # Python security checks
+    - repo: https://github.com/PyCQA/bandit
+      rev: 1.9.3
+      hooks:
+          - id: bandit
+            args: [-c, pyproject.toml]
+            additional_dependencies: ["bandit[toml]"]

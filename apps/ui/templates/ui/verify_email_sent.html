@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}
+    Vérifiez votre email — FactPulse Billing
+{% endblock title %}
+{% block content_anonymous %}
+    <div class="login-container">
+        <h1 class="login-title">FactPulse Billing</h1>
+        {% if messages %}
+            {% for message in messages %}
+                <div class="login-body {% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        <p class="login-body">
+            Un email de vérification a été envoyé à votre adresse.
+            Cliquez sur le lien dans l'email pour activer votre compte.
+        </p>
+        <p class="login-link">Vous n'avez pas reçu l'email ?</p>
+        <form method="post" action="{% url 'ui:resend_verification' %}">
+            {% csrf_token %}
+            <label for="id_email">Votre adresse email</label>
+            <input type="email"
+                   name="email"
+                   id="id_email"
+                   required
+                   placeholder="vous@exemple.fr">
+            <button type="submit" class="login-resend-btn">Renvoyer l'email</button>
+        </form>
+        <p class="login-link">
+            <a href="{% url 'ui:login' %}">Retour à la connexion</a>
+        </p>
+    </div>
+{% endblock content_anonymous %}

@@ -1,0 +1,47 @@
+<table>
+    <thead>
+        <tr>
+            <th>Nom</th>
+            <th>SIREN</th>
+            <th>N° TVA</th>
+            <th>Par défaut</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for s in suppliers %}
+            <tr {% if s.archived %}class="row-archived"{% endif %}>
+                <td>{{ s.name }}</td>
+                <td>{{ s.siren|default:"—" }}</td>
+                <td>{{ s.vat_number|default:"—" }}</td>
+                <td>
+                    {% if s.is_default %}
+                        Oui
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+                <td class="actions-cell">
+                    <a href="{% url 'ui:supplier_edit' uuid=s.uuid %}" class="btn-sm">Modifier</a>
+                    <form method="post"
+                          action="{% url 'ui:supplier_archive' uuid=s.uuid %}"
+                          class="d-inline">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-sm secondary">
+                            {% if s.archived %}
+                                Restaurer
+                            {% else %}
+                                Archiver
+                            {% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+        {% empty %}
+            <tr>
+                <td colspan="5" class="empty-row">Aucun fournisseur</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% include "ui/partials/_pagination.html" %}
