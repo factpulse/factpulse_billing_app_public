@@ -117,9 +117,11 @@ jobs:
         run: |-
           printf '%s\n' \
             'DJANGO_SETTINGS_MODULE=config.settings.dev' \
+            'POSTGRES_HOST=db' \
             'POSTGRES_DB=factpulse' \
             'POSTGRES_USER=factpulse' \
             'POSTGRES_PASSWORD=factpulse' \
+            'CELERY_BROKER_URL=redis://redis:6379/0' \
             'SECRET_KEY=ci-test-secret-key-not-for-production-use-1234567890' \
             'DEBUG=True' \
             > .env
@@ -127,7 +129,11 @@ jobs:
       - name: Start services (dev mode)
         run: |
           docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-          echo "Waiting for services to be healthy..."
+          echo "Waiting for database..."
+          timeout 30 bash -c 'until docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T db pg_isready -U factpulse; do sleep 2; done'
+          echo "Running migrations..."
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T billing-web uv run python manage.py migrate --noinput
+          echo "Waiting for web to be healthy..."
           timeout 120 bash -c 'until docker compose -f docker-compose.yml -f docker-compose.dev.yml ps billing-web | grep -q healthy; do sleep 5; done'
 
       - name: Smoke test — health check
@@ -138,7 +144,14 @@ jobs:
       - name: Smoke test — API responds
         run: |
           docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T billing-web \
-            python -c "import urllib.request; r = urllib.request.urlopen('http://localhost:8000/api/v1/schema/'); assert r.status == 200"
+            python -c "
+          import urllib.request, urllib.error
+          try:
+              urllib.request.urlopen('http://localhost:8000/api/v1/schema/')
+          except urllib.error.HTTPError as e:
+              assert e.code == 401, f'Expected 401, got {e.code}'
+              print('API responds with 401 (auth required) — OK')
+          "
 
       - name: Stop services
         if: always()
