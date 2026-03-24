@@ -12,7 +12,6 @@ from django.template.loader import render_to_string
 from apps.billing.models import Invoice, InvoiceAuditLog
 from apps.billing.services import invoice_service
 from apps.billing.services.flow_detector import (
-    FLOW_TO_PROCESSING_RULE,
     get_ereporting_flux_type,
     is_ereporting_flow,
 )
@@ -198,13 +197,12 @@ def transmit_invoice(invoice_uuid):
         facturx_pdf = invoice.pdf_file.read()
 
         # Build AFNOR FlowInfo (XP Z12-013 §FlowInfo)
-        processing_rule = FLOW_TO_PROCESSING_RULE.get(invoice.detected_flow, "B2B")
+        # processingRule omitted — let the PDP compute it from invoice content (§5.2.4)
         flow_info = {
             "flowSyntax": "Factur-X",
             "flowProfile": "CIUS",
             "trackingId": str(invoice.uuid),
             "name": invoice.number or str(invoice.uuid),
-            "processingRule": processing_rule,
             "sha256": hashlib.sha256(facturx_pdf).hexdigest(),
         }
 

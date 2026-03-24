@@ -242,6 +242,8 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             )
         except ConflictError:
             raise
+        except ValueError as e:
+            raise UnprocessableError(detail=str(e)) from None
         return Response(InvoiceReadSerializer(invoice).data)
 
     @action(detail=True, methods=["post"])

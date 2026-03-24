@@ -184,6 +184,9 @@ class FactPulseClient:
         return response
 
     def _handle_error(self, response):
+        logger.error(
+            "[FactPulse] API error %s: %s", response.status_code, response.text[:2000]
+        )
         try:
             error_data = response.json()
         except ValueError:

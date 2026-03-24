@@ -176,6 +176,9 @@
                     {% elif factpulse_sandbox %}
                         <div class="sandbox-banner">Mode sandbox — la transmission et l'annuaire réel sont désactivés.</div>
                     {% endif %}
+                    {% if messages %}
+                        {% for message in messages %}<div class="alert alert-{{ message.tags }}">{{ message }}</div>{% endfor %}
+                    {% endif %}
                     {% block content %}
                     {% endblock content %}
                 </main>

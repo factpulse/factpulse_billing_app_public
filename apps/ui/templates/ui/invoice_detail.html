@@ -2,6 +2,11 @@
 {% block title %}
     {{ invoice.number|default:"Brouillon" }} — FactPulse Billing
 {% endblock title %}
+{% block extra_head %}
+    {% if invoice.status == "processing" or invoice.status == "transmitting" %}
+        <meta http-equiv="refresh" content="3">
+    {% endif %}
+{% endblock extra_head %}
 {% block content %}
     <div class="topbar">
         <h1>

@@ -191,9 +191,9 @@ def _invoice_action(request, uuid, action_fn, error_msg, redirect_to_result=Fals
             result = action_fn(invoice, user=request.user)
             if redirect_to_result and result:
                 return redirect("ui:invoice_detail", uuid=result.uuid)
-        except (ConflictError, ValueError):
+        except (ConflictError, ValueError) as e:
             logger.exception("%s %s", error_msg, uuid)
-            messages.error(request, error_msg)
+            messages.error(request, str(e))
     return redirect("ui:invoice_detail", uuid=uuid)
 
 
