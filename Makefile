@@ -149,11 +149,6 @@ precommit-install: ## Install pre-commit hooks
 lock: ## Update uv.lock (resolve latest compatible versions)
 	uv lock --upgrade
 
-# ---------- Sync ----------
-
-sync-public: ## Sync private repo to public repo
-	./scripts/sync-to-public.sh
-
 # ---------- Self-hosted (Caddy + SSL) ----------
 
 selfhost: env ## Start self-hosted stack (Caddy + SSL)
