@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}
+    Paiements — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Paiements</h1>
+    </div>
+    {% if messages %}
+        <div class="mb-1">
+            {% for message in messages %}
+                <div class="{% if message.tags == 'success' %}sandbox-banner{% else %}degraded-banner{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% if payments_disabled %}
+        <div class="degraded-banner">
+            Le module paiements n'est pas activé. Définissez <code>STRIPE_ENABLED=true</code> pour l'activer.
+        </div>
+    {% else %}
+        <!-- Stripe -->
+        <form method="post" class="form-narrow-lg">
+            {% csrf_token %}
+            <input type="hidden" name="provider" value="stripe">
+            <div class="section-box">
+                <h3>Stripe</h3>
+                <p class="section-hint">Connectez votre compte Stripe pour générer des liens de paiement sur vos factures.</p>
+                <label>Clé secrète API</label>
+                <input type="password"
+                       name="api_key"
+                       required
+                       placeholder="{% if stripe_config %}Clé enregistrée — saisir pour modifier{% else %}sk_live_…{% endif %}">
+                {% if stripe_config and stripe_config.is_active %}
+                    <p class="section-hint text-success">Clé API configurée.</p>
+                {% endif %}
+                <label class="label-spaced">Webhook signing secret</label>
+                <input type="password"
+                       name="webhook_secret"
+                       placeholder="{% if stripe_config and stripe_config.webhook_secret %}Secret enregistré — saisir pour modifier{% else %}whsec_…{% endif %}">
+                <p class="section-hint">
+                    Laissez vide pour conserver le secret existant. Obtenu dans le Dashboard Stripe &gt; Developers &gt; Webhooks.
+                </p>
+                <label class="label-spaced">Fournisseur par défaut (abonnements)</label>
+                <select name="default_supplier">
+                    <option value="">— Aucun —</option>
+                    {% for s in suppliers %}
+                        <option value="{{ s.uuid }}"
+                                {% if stripe_config and stripe_config.default_supplier_id == s.id %}selected{% endif %}>
+                            {{ s.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+                <p class="section-hint">
+                    Utilisé pour créer automatiquement des factures depuis les événements <code>invoice.finalized</code> Stripe (abonnements).
+                </p>
+            </div>
+            <button type="submit" class="btn-submit-full">Enregistrer</button>
+        </form>
+        <!-- Stripe sync links -->
+        {% if stripe_config and stripe_config.is_active %}
+            <div class="section-box form-narrow-lg mt-1">
+                <h3>Synchronisation Stripe</h3>
+                <p class="section-hint">Importez vos clients, produits et factures existants depuis Stripe.</p>
+                <div class="form-actions">
+                    <a href="{% url 'ui:stripe_customers' %}" role="button" class="outline">Clients</a>
+                    <a href="{% url 'ui:stripe_products' %}" role="button" class="outline">Produits</a>
+                    <a href="{% url 'ui:stripe_invoices' %}" role="button" class="outline">Factures</a>
+                </div>
+            </div>
+        {% endif %}
+        <!-- Webhook URL -->
+        <div class="section-box form-narrow-lg mt-1">
+            <h3>URL Webhook à déclarer dans Stripe</h3>
+            <p class="section-hint">
+                Ajoutez cette URL dans <strong>Developers &gt; Webhooks &gt; Add endpoint</strong> dans votre Dashboard Stripe.
+            </p>
+            <div class="input-row">
+                <input type="text"
+                       id="webhook-url"
+                       value="{{ webhook_url }}"
+                       readonly
+                       class="input-mono flex-1">
+                <button type="button"
+                        class="btn-sm"
+                        onclick="navigator.clipboard.writeText(document.getElementById('webhook-url').value).then(() => this.textContent = 'Copié !')">
+                    Copier
+                </button>
+            </div>
+            <p class="section-hint">Événements recommandés :</p>
+            <ul class="webhook-events-list">
+                <li>
+                    <code>checkout.session.completed</code>
+                </li>
+                <li>
+                    <code>checkout.session.async_payment_succeeded</code>
+                </li>
+                <li>
+                    <code>checkout.session.async_payment_failed</code>
+                </li>
+                <li>
+                    <code>checkout.session.expired</code>
+                </li>
+                <li>
+                    <code>invoice.finalized</code> — création auto de facture depuis abonnement
+                </li>
+                <li>
+                    <code>invoice.paid</code> / <code>invoice.payment_failed</code>
+                </li>
+            </ul>
+        </div>
+    {% endif %}
+{% endblock content %}

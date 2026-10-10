@@ -1,5 +1,6 @@
 """Tests for the invoice service (create, update, validate, transmit, cancel, etc.)."""
 
+from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -75,6 +76,39 @@ class TestCreateInvoice:
         invoice, _ = invoice_service.create_invoice(org, payload)
 
         assert invoice.external_id == "ext_inv_1"
+
+    def test_applies_supplier_default_vat_exemption_to_zero_rate_lines(self, org):
+        supplier = SupplierFactory(
+            organization=org,
+            default_vat_exemption_reason="TVA non applicable, art. 293 B du CGI",
+            default_vat_exemption_code="VATEX-FR-FRANCHISE",
+            vat_number="FR12345678901",
+        )
+        payload = {
+            "supplier_id": str(supplier.uuid),
+            "en16931_data": {
+                "invoiceLines": [
+                    {
+                        "itemName": "Prestation",
+                        "quantity": "1",
+                        "unitNetPrice": "100",
+                        "manualVatRate": "0",
+                    }
+                ],
+            },
+        }
+
+        invoice, _ = invoice_service.create_invoice(org, payload)
+
+        line = invoice.en16931_data["invoiceLines"][0]
+        assert line["vatCategory"] == "E"
+        assert line["exemptionReason"] == "TVA non applicable, art. 293 B du CGI"
+        assert line["vatexCode"] == "VATEX-FR-FRANCHISE"
+
+        vat_line = invoice.en16931_data["vatLines"][0]
+        assert vat_line["category"] == "E"
+        assert vat_line["exemptionReason"] == "TVA non applicable, art. 293 B du CGI"
+        assert vat_line["vatexCode"] == "VATEX-FR-FRANCHISE"
 
 
 @pytest.mark.django_db
@@ -225,6 +259,30 @@ class TestValidateInvoice:
         with pytest.raises(ConflictError):
             invoice_service.validate_invoice(invoice)
 
+    def test_default_exemption_without_vat_number_raises(self, org, supplier):
+        supplier.default_vat_exemption_reason = "TVA non applicable, art. 293 B du CGI"
+        supplier.vat_number = ""
+        supplier.save()
+        NumberingSequenceFactory(supplier=supplier)
+        invoice = InvoiceFactory(supplier=supplier, organization=org)
+
+        with pytest.raises(ValueError, match="numéro de TVA"):
+            invoice_service.validate_invoice(invoice)
+
+    @patch("apps.factpulse.tasks.generate_and_validate_invoice.delay")
+    def test_default_exemption_with_vat_number_succeeds(
+        self, mock_delay, org, supplier
+    ):
+        supplier.default_vat_exemption_reason = "TVA non applicable, art. 293 B du CGI"
+        supplier.vat_number = "FR12345678901"
+        supplier.save()
+        NumberingSequenceFactory(supplier=supplier)
+        invoice = InvoiceFactory(supplier=supplier, organization=org)
+
+        result = invoice_service.validate_invoice(invoice)
+
+        assert result.status == "processing"
+
     @patch("apps.factpulse.tasks.generate_and_validate_invoice.delay")
     def test_detects_flow_b2b_domestic(self, mock_delay, org, supplier):
         from apps.billing.factories import CustomerFactory
@@ -269,6 +327,40 @@ class TestValidateInvoice:
 
         refs = result.en16931_data.get("references", {})
         assert refs.get("invoicingFramework") == "B1"
+
+    @patch("apps.factpulse.tasks.generate_and_validate_invoice.delay")
+    def test_injects_prepayment_when_already_paid(self, mock_delay, org, supplier):
+        """A Stripe ``invoice.paid`` received before manual validation pre-fills
+        ``payment_amount`` on the draft — validation must reflect it in the
+        Factur-X totals (BT-113/BT-115) per BR-CO-16.
+        """
+        NumberingSequenceFactory(supplier=supplier)
+        invoice = InvoiceFactory(
+            supplier=supplier,
+            organization=org,
+            payment_amount=Decimal("120.00"),
+            en16931_data={"totals": {"totalGrossAmount": "120.00"}},
+        )
+
+        result = invoice_service.validate_invoice(invoice)
+
+        totals = result.en16931_data["totals"]
+        assert totals["prepayment"] == "120.00"
+        assert totals["amountDue"] == "0.00"
+
+    @patch("apps.factpulse.tasks.generate_and_validate_invoice.delay")
+    def test_no_prepayment_when_not_paid(self, mock_delay, org, supplier):
+        NumberingSequenceFactory(supplier=supplier)
+        invoice = InvoiceFactory(
+            supplier=supplier,
+            organization=org,
+            en16931_data={"totals": {"totalGrossAmount": "120.00"}},
+        )
+
+        result = invoice_service.validate_invoice(invoice)
+
+        assert "prepayment" not in result.en16931_data["totals"]
+        assert result.en16931_data["totals"]["totalGrossAmount"] == "120.00"
 
     @patch("apps.factpulse.tasks.generate_and_validate_invoice.delay")
     def test_enriches_recipient_country_from_customer(self, mock_delay, org, supplier):
@@ -395,6 +487,28 @@ class TestMarkPaid:
 
         with pytest.raises(ConflictError):
             invoice_service.mark_paid(invoice)
+
+    def test_mark_paid_preserves_prefilled_payment_info(self, org, supplier):
+        """Payment info recorded earlier (e.g. Stripe ``invoice.paid`` received
+        while the invoice was still a draft/processing) must not be clobbered
+        by the defaults applied on the manual "mark paid" transition.
+        """
+        invoice = InvoiceFactory(
+            supplier=supplier,
+            organization=org,
+            status="transmitted",
+            en16931_data={"totals": {"totalGrossAmount": "500.00"}},
+            payment_date=date(2026, 1, 10),
+            payment_reference="stripe:in_prefilled",
+            payment_amount=Decimal("500.00"),
+        )
+
+        result = invoice_service.mark_paid(invoice)
+
+        assert result.status == "paid"
+        assert str(result.payment_date) == "2026-01-10"
+        assert result.payment_reference == "stripe:in_prefilled"
+        assert result.payment_amount == Decimal("500.00")
 
 
 @pytest.mark.django_db

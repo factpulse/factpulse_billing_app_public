@@ -1239,7 +1239,11 @@ select.tomselected { border: none !important; box-shadow: none !important; outli
 .prose td { color: var(--text-secondary); }
 .prose strong { color: var(--text); }
 
-/* ----- 25. API Keys page ----- */
+/* ----- 25. Payment settings page ----- */
+.input-mono { font-family: monospace; }
+.webhook-events-list { font-size: 0.85rem; color: var(--text-muted); margin: 0 0 1rem 1.2rem; padding: 0; }
+
+/* ----- 26. API Keys page ----- */
 .api-key-banner { word-break: break-all; }
 .api-key-copy-inline { margin-left: 0.5rem; }
 .api-key-create-btn { margin-top: 0.5rem; }

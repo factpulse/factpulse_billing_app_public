@@ -74,6 +74,15 @@ class Supplier(models.Model):
         max_length=30, choices=VatRegime, default=VatRegime.REEL_NORMAL_MENSUEL
     )
 
+    # Exonération de TVA par défaut (BG-23) — appliquée aux lignes facturées à 0%
+    # (ex. franchise en base, art. 293B du CGI). BR-E-10 exige BT-120 et/ou BT-121.
+    default_vat_exemption_reason = models.CharField(  # BT-120
+        max_length=255, blank=True
+    )
+    default_vat_exemption_code = models.CharField(  # BT-121
+        max_length=30, blank=True
+    )
+
     # Conditions de paiement
     payment_terms_days = models.PositiveIntegerField(null=True, blank=True)
     payment_terms_end_of_month = models.BooleanField(default=False)

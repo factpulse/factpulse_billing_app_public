@@ -93,6 +93,19 @@
                     {% endif %}
                 {% endif %}
             </table>
+            {% if pdp_status_loaded and pdp_config.isConfigured %}
+                <form method="post"
+                      class="btn-submit-spaced"
+                      {% if pdp_config.isActive %}onsubmit="return confirm('Désactiver la connexion à la plateforme agréée ? La transmission des factures sera suspendue.')"{% endif %}>
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="toggle_active">
+                    {% if pdp_config.isActive %}
+                        <button type="submit" class="btn-danger">Désactiver la connexion</button>
+                    {% else %}
+                        <button type="submit" class="btn-submit-full">Réactiver la connexion</button>
+                    {% endif %}
+                </form>
+            {% endif %}
         </div>
         <!-- Config form -->
         <form method="post" class="form-narrow-lg">

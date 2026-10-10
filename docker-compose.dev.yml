@@ -7,11 +7,6 @@ services:
     ports:
       - "6379:6379"
 
-  minio:
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-
   billing-web:
     entrypoint: []
     command: uv run python manage.py runserver 0.0.0.0:8000

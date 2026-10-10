@@ -240,6 +240,12 @@ CORS_ALLOWED_ORIGINS = os.environ.get(
     "CORS_ALLOWED_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000"
 ).split(",")
 
+# Site URL — used for absolute links in emails sent from background tasks (no request)
+SITE_URL = os.environ.get(
+    "SITE_URL",
+    CORS_ALLOWED_ORIGINS[0] if CORS_ALLOWED_ORIGINS else "http://localhost:8000",
+)
+
 # S3 / django-storages
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID", "minioadmin")

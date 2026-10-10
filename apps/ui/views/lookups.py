@@ -45,6 +45,27 @@ def pdp_settings(request):
             messages.error(request, "Organisation non provisionnée sur FactPulse.")
             return redirect("ui:pdp_settings")
 
+        action = request.POST.get("action", "save")
+
+        if action == "toggle_active":
+            if not pdp_status_loaded or not pdp_config.get("isConfigured"):
+                messages.error(
+                    request, "Aucune configuration plateforme agréée à activer."
+                )
+                return redirect("ui:pdp_settings")
+
+            new_active = not pdp_config.get("isActive")
+            try:
+                client.push_pdp_config(client_uid, {"isActive": new_active})
+                if new_active:
+                    messages.success(request, "Connexion plateforme agréée réactivée.")
+                else:
+                    messages.success(request, "Connexion plateforme agréée désactivée.")
+            except FactPulseError as e:
+                messages.error(request, f"Erreur FactPulse : {e}")
+
+            return redirect("ui:pdp_settings")
+
         flow_service_url = request.POST.get("flowServiceUrl", "").strip()
         token_url = request.POST.get("tokenUrl", "").strip()
         oauth_client_id = request.POST.get("oauthClientId", "").strip()

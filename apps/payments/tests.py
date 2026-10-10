@@ -1190,8 +1190,7 @@ class InvoiceFinalizedTest(TestCase):
         )
 
     @patch("apps.payments.services.get_adapter")
-    @patch("apps.billing.services.invoice_service.validate_invoice")
-    def test_invoice_finalized_creates_invoice(self, mock_validate, mock_get_adapter):
+    def test_invoice_finalized_creates_invoice(self, mock_get_adapter):
         mock_adapter = MagicMock()
         mock_adapter.verify_webhook.return_value = True
         mock_adapter.parse_webhook.return_value = WebhookEvent(
@@ -1234,13 +1233,16 @@ class InvoiceFinalizedTest(TestCase):
         )
 
         assert result is True
-        mock_validate.assert_called_once()
 
         from apps.billing.models import Invoice
 
         invoice = Invoice.objects.get(external_id="in_stripe_123")
         assert invoice.organization == self.org
         assert invoice.supplier == self.supplier
+        # Stripe-imported invoices are left as drafts for manual validation —
+        # no number is assigned and no transmission is attempted.
+        assert invoice.status == "draft"
+        assert invoice.number == ""
 
     @patch("apps.payments.services.get_adapter")
     def test_invoice_finalized_no_default_supplier_skips(self, mock_get_adapter):
@@ -1271,8 +1273,7 @@ class InvoiceFinalizedTest(TestCase):
         assert not Invoice.objects.filter(external_id="in_nosup").exists()
 
     @patch("apps.payments.services.get_adapter")
-    @patch("apps.billing.services.invoice_service.validate_invoice")
-    def test_invoice_finalized_duplicate_skips(self, mock_validate, mock_get_adapter):
+    def test_invoice_finalized_duplicate_skips(self, mock_get_adapter):
         # Create an existing invoice with this external_id
         InvoiceFactory(
             supplier=self.supplier,
@@ -1292,7 +1293,10 @@ class InvoiceFinalizedTest(TestCase):
         mock_get_adapter.return_value = mock_adapter
 
         handle_webhook("stripe", self.provider_config, {}, b"{}")
-        mock_validate.assert_not_called()
+
+        from apps.billing.models import Invoice
+
+        assert Invoice.objects.filter(external_id="in_existing").count() == 1
 
 
 @_skip
@@ -1388,7 +1392,7 @@ class InvoicePaidTest(TestCase):
         assert result is True
 
     @patch("apps.payments.services.get_adapter")
-    def test_invoice_paid_still_processing_skips(self, mock_get_adapter):
+    def test_invoice_paid_still_processing_records_payment_info(self, mock_get_adapter):
         self.invoice.status = "processing"
         self.invoice.save()
 
@@ -1408,7 +1412,41 @@ class InvoicePaidTest(TestCase):
         result = handle_webhook("stripe", self.provider_config, {}, b"{}")
         assert result is True
         self.invoice.refresh_from_db()
+        # Status is left untouched — only the payment info is recorded so it
+        # surfaces in the UI ahead of manual validation.
         assert self.invoice.status == "processing"
+        assert self.invoice.payment_reference == "stripe:in_stripe_paid"
+        assert self.invoice.payment_amount == Decimal("120.00")
+        assert self.invoice.payment_date is not None
+
+    @patch("apps.payments.services.get_adapter")
+    def test_invoice_paid_draft_records_payment_info(self, mock_get_adapter):
+        self.invoice.status = "draft"
+        self.invoice.number = ""
+        self.invoice.save()
+
+        mock_adapter = MagicMock()
+        mock_adapter.verify_webhook.return_value = True
+        mock_adapter.parse_webhook.return_value = WebhookEvent(
+            provider_event_id="evt_draft_paid",
+            event_type="invoice.paid",
+            provider_payment_id="in_stripe_paid",
+            metadata={},
+            raw_data={
+                "data": {"object": {"id": "in_stripe_paid", "amount_paid": 12000}}
+            },
+        )
+        mock_get_adapter.return_value = mock_adapter
+
+        result = handle_webhook("stripe", self.provider_config, {}, b"{}")
+        assert result is True
+        self.invoice.refresh_from_db()
+        # Status stays "draft" — manual validation is still required —
+        # but the payment info is already recorded for when mark_paid() runs.
+        assert self.invoice.status == "draft"
+        assert self.invoice.payment_reference == "stripe:in_stripe_paid"
+        assert self.invoice.payment_amount == Decimal("120.00")
+        assert self.invoice.payment_date is not None
 
 
 # --- Phase 2: Stripe adapter event type mapping ---
@@ -1755,3 +1793,163 @@ class TestFintectureWebhookView:
             HTTP_SIGNATURE="sig",
         )
         assert resp.status_code == 400
+
+
+# --- Stripe import: payment means, recipient source, re-sync ---
+
+
+def _stripe_invoice(**overrides):
+    data = {
+        "id": "in_resync_1",
+        "number": "INV-0042",
+        "currency": "eur",
+        "customer": "cus_resync",
+        "customer_name": "Acme (Stripe)",
+        "customer_email": "billing@acme.com",
+        "customer_address": {
+            "line1": "1 rue A",
+            "postal_code": "75001",
+            "city": "Paris",
+            "country": "FR",
+        },
+        "subtotal": 10000,
+        "total": 10000,
+        "status_transitions": {"finalized_at": 1760000000},
+        "lines": {
+            "data": [{"description": "Abonnement", "quantity": 1, "amount": 10000}]
+        },
+    }
+    data.update(overrides)
+    return data
+
+
+@_skip
+class StripePaymentMeansTest(TestCase):
+    def _means(self, **overrides):
+        from apps.payments.providers.stripe.mapper import _resolve_payment_means
+
+        return _resolve_payment_means(_stripe_invoice(**overrides))
+
+    def test_card_payment_method(self):
+        settings = {"payment_method_types": ["card", "sepa_debit"]}
+        assert self._means(payment_settings=settings) == "AUTRE"
+
+    def test_sepa_debit(self):
+        settings = {"payment_method_types": ["sepa_debit"]}
+        assert self._means(payment_settings=settings) == "PRELEVEMENT"
+
+    def test_bank_transfer(self):
+        settings = {"payment_method_types": ["customer_balance"]}
+        assert self._means(payment_settings=settings) == "VIREMENT"
+
+    def test_charge_automatically_defaults_to_card(self):
+        settings = {"payment_method_types": None}
+        assert (
+            self._means(
+                payment_settings=settings, collection_method="charge_automatically"
+            )
+            == "AUTRE"
+        )
+
+    def test_send_invoice_defaults_to_transfer(self):
+        assert self._means(collection_method="send_invoice") == "VIREMENT"
+
+
+@_skip
+class StripeImportRecipientTest(TestCase):
+    def setUp(self):
+        from apps.billing.models import Customer
+
+        self.supplier = SupplierFactory()
+        self.org = self.supplier.organization
+        self.provider_config = ProviderConfig.objects.create(
+            organization=self.org,
+            provider="stripe",
+            api_key="sk_test",
+            webhook_secret="whsec_test",
+            default_supplier=self.supplier,
+        )
+        self.customer = Customer.objects.create(
+            organization=self.org,
+            external_id="cus_resync",
+            name="ACME SAS",
+            siren="123456789",
+            email="compta@acme.fr",
+            address={
+                "lineOne": "1 rue A",
+                "lineTwo": "Bat B",
+                "postalCode": "75001",
+                "city": "Paris",
+                "countryCode": "FR",
+            },
+        )
+
+    def test_import_uses_customer_record(self):
+        from apps.payments.services import import_stripe_invoice
+
+        invoice, created = import_stripe_invoice(
+            self.org, _stripe_invoice(), self.provider_config
+        )
+
+        assert created
+        recipient = invoice.en16931_data["recipient"]
+        assert invoice.customer == self.customer
+        assert recipient["name"] == "ACME SAS"
+        assert recipient["email"] == "compta@acme.fr"
+        assert recipient["postalAddress"]["lineTwo"] == "Bat B"
+
+    @patch("stripe.Invoice.retrieve")
+    def test_resync_rebuilds_draft(self, mock_retrieve):
+        from apps.payments.services import import_stripe_invoice, resync_stripe_invoice
+
+        invoice, _ = import_stripe_invoice(
+            self.org, _stripe_invoice(), self.provider_config
+        )
+        version = invoice.version
+        mock_retrieve.return_value = _stripe_invoice(
+            subtotal=15000,
+            total=15000,
+            collection_method="charge_automatically",
+            lines={
+                "data": [
+                    {"description": "Abonnement Pro", "quantity": 1, "amount": 15000}
+                ]
+            },
+        )
+
+        invoice = resync_stripe_invoice(invoice, self.provider_config)
+
+        mock_retrieve.assert_called_once_with(
+            "in_resync_1", api_key="sk_test", expand=["customer"]
+        )
+        data = invoice.en16931_data
+        assert invoice.status == "draft"
+        assert invoice.number == "INV-0042"
+        assert data["invoiceNumber"] == "INV-0042"
+        assert invoice.version == version + 1
+        assert data["invoiceLines"][0]["itemName"] == "Abonnement Pro"
+        assert data["totals"]["totalNetAmount"] == "150.00"
+        assert data["references"]["paymentMeans"] == "AUTRE"
+        assert data["recipient"]["name"] == "ACME SAS"
+
+    @patch("stripe.Invoice.retrieve")
+    def test_resync_refuses_non_draft(self, mock_retrieve):
+        from apps.payments.services import import_stripe_invoice, resync_stripe_invoice
+
+        invoice, _ = import_stripe_invoice(
+            self.org, _stripe_invoice(), self.provider_config
+        )
+        invoice.status = "validated"
+        invoice.save()
+        mock_retrieve.return_value = _stripe_invoice()
+
+        with pytest.raises(ConflictError):
+            resync_stripe_invoice(invoice, self.provider_config)
+
+    def test_resync_refuses_non_stripe_invoice(self):
+        from apps.payments.services import resync_stripe_invoice
+
+        invoice = InvoiceFactory(organization=self.org, supplier=self.supplier)
+
+        with pytest.raises(ValueError):
+            resync_stripe_invoice(invoice, self.provider_config)

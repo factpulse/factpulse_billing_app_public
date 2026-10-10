@@ -30,6 +30,41 @@ def create_invoice(organization, payload, user=None):
 
     Returns (invoice, warnings).
     """
+    supplier, customer, en16931_data, warnings = _build_invoice_data(
+        organization, payload
+    )
+
+    # Create the invoice
+    invoice = Invoice(
+        organization=organization,
+        supplier=supplier,
+        customer=customer,
+        en16931_data=en16931_data,
+        external_id=payload.get("external_id"),
+        is_internal=payload.get("is_internal", False),
+    )
+
+    # Externally-assigned number (e.g. Stripe keeps its own gapless legal
+    # sequence). When provided, it becomes the invoice number from the start and
+    # validate_invoice() will not overwrite it (`if not invoice.number`).
+    external_number = (payload.get("number") or "").strip()
+    if external_number:
+        invoice.number = external_number
+        invoice.en16931_data["invoiceNumber"] = external_number
+
+    invoice.save()
+
+    # Audit log
+    _audit_log(invoice, A.CREATED, user=user)
+
+    return invoice, warnings
+
+
+def _build_invoice_data(organization, payload):
+    """Resolve parties and build the enriched en16931_data of a payload.
+
+    Returns (supplier, customer, en16931_data, warnings).
+    """
     warnings = []
 
     # Resolve supplier
@@ -61,19 +96,34 @@ def create_invoice(organization, payload, user=None):
 
     enrich_en16931_data(en16931_data, supplier=supplier)
 
-    # Create the invoice
-    invoice = Invoice(
-        organization=organization,
-        supplier=supplier,
-        customer=customer,
-        en16931_data=en16931_data,
-        external_id=payload.get("external_id"),
-        is_internal=payload.get("is_internal", False),
+    return supplier, customer, en16931_data, warnings
+
+
+def replace_draft_data(invoice, payload, user=None):
+    """Rebuild a draft invoice from a full payload, as create_invoice() would.
+
+    Used to re-sync a draft from its external source (e.g. Stripe). The invoice
+    number is kept. Returns (invoice, warnings).
+    """
+    if not state_machine.is_editable(invoice):
+        raise ConflictError("Only draft invoices can be edited.")
+
+    supplier, customer, en16931_data, warnings = _build_invoice_data(
+        invoice.organization, payload
     )
+    if invoice.number:
+        en16931_data["invoiceNumber"] = invoice.number
+
+    invoice.supplier = supplier
+    invoice.customer = customer
+    invoice.en16931_data = en16931_data
+    invoice.version += 1
+    invoice.factpulse_error = None
+    if invoice.pdf_file:
+        invoice.pdf_file.delete(save=False)
     invoice.save()
 
-    # Audit log
-    _audit_log(invoice, A.CREATED, user=user)
+    _audit_log(invoice, A.DATA_UPDATE, user=user)
 
     return invoice, warnings
 
@@ -219,6 +269,24 @@ def validate_invoice(invoice, user=None):
             "L'IBAN est obligatoire pour générer une facture Factur-X conforme (BT-84)."
         )
 
+    # An exonération de TVA par défaut (catégorie E) requires the Seller VAT
+    # identifier (BT-31) per BR-E-02 — facture_electronique only maps
+    # SpecifiedTaxRegistration from supplier.vat_number.
+    if (
+        invoice.supplier
+        and (
+            invoice.supplier.default_vat_exemption_reason
+            or invoice.supplier.default_vat_exemption_code
+        )
+        and not invoice.supplier.vat_number
+    ):
+        raise ValueError(
+            f"Le fournisseur « {invoice.supplier.name} » a une exonération de TVA "
+            "par défaut configurée mais pas de numéro de TVA intracommunautaire. "
+            "Le numéro de TVA (BT-31) est obligatoire pour une facture exonérée "
+            "conforme (BR-E-02), même en franchise en base."
+        )
+
     with transaction.atomic():
         # Assign number if not already assigned
         if not invoice.number:
@@ -233,6 +301,18 @@ def validate_invoice(invoice, user=None):
 
         # Inject invoiceNumber into en16931_data (required by FactPulse)
         invoice.en16931_data["invoiceNumber"] = invoice.number
+
+        # Reflect a payment already recorded before validation (e.g. Stripe
+        # invoice.paid received while still a draft) in the Factur-X totals.
+        # BR-CO-16: amountDue (BT-115) = totalGrossAmount (BT-112)
+        #           - prepayment (BT-113) + roundingAmount (BT-114)
+        if invoice.payment_amount:
+            totals = invoice.en16931_data.setdefault("totals", {})
+            total_gross = Decimal(str(totals.get("totalGrossAmount", "0")))
+            totals["prepayment"] = str(invoice.payment_amount)
+            totals["amountDue"] = str(
+                (total_gross - invoice.payment_amount).quantize(Decimal("0.01"))
+            )
 
         # Flow detection (ref BR-FR-20, XP Z12-012)
         if not invoice.detected_flow:
@@ -299,12 +379,23 @@ def mark_paid(invoice, payment_data=None, user=None):
     old_status = invoice.status
     invoice.status = S.PAID
 
+    # Payment fields may already be pre-filled (e.g. invoice.paid received
+    # from Stripe while the invoice was still a draft) — only fall back to
+    # defaults when not already set, so we don't clobber that information.
     payment_data = payment_data or {}
-    invoice.payment_date = payment_data.get("payment_date", date.today())
-    invoice.payment_reference = payment_data.get("payment_reference", "")
+    if "payment_date" in payment_data:
+        invoice.payment_date = payment_data["payment_date"]
+    elif not invoice.payment_date:
+        invoice.payment_date = date.today()
+
+    if "payment_reference" in payment_data:
+        invoice.payment_reference = payment_data["payment_reference"]
+    elif not invoice.payment_reference:
+        invoice.payment_reference = ""
+
     if payment_data.get("amount"):
         invoice.payment_amount = Decimal(str(payment_data["amount"]))
-    elif invoice.total_incl_tax:
+    elif not invoice.payment_amount:
         invoice.payment_amount = invoice.total_incl_tax
 
     invoice.save()

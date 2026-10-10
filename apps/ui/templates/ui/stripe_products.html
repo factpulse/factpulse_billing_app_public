@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}
+    Produits Stripe — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Produits Stripe</h1>
+        <a href="{% url 'ui:payment_settings' %}" role="button" class="outline">Retour</a>
+    </div>
+    {% if messages %}
+        <div class="mb-1">
+            {% for message in messages %}
+                <div class="{% if message.tags == 'success' %}sandbox-banner{% else %}degraded-banner{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% if api_error %}
+        <div class="degraded-banner">Erreur API Stripe : {{ api_error }}</div>
+    {% else %}
+        {% if unmapped_count %}
+            <div class="section-box form-narrow-lg">
+                <p class="section-hint">{{ unmapped_count }} produit(s) non encore importé(s) dans FactPulse.</p>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="import_all">
+                    <button type="submit" class="btn-submit-full">Tout importer ({{ unmapped_count }})</button>
+                </form>
+            </div>
+        {% endif %}
+        <div class="section-box">
+            {% if stripe_list %}
+                <table class="pdp-status-table">
+                    <thead>
+                        <tr>
+                            <th>Nom</th>
+                            <th>Description</th>
+                            <th>Prix par défaut</th>
+                            <th>ID Stripe</th>
+                            <th>Statut</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in stripe_list %}
+                            <tr>
+                                <td>{{ item.name }}</td>
+                                <td class="text-muted">{{ item.description|truncatechars:60 }}</td>
+                                <td>{{ item.default_price|default:"—" }}</td>
+                                <td>
+                                    <code>{{ item.id }}</code>
+                                </td>
+                                <td>
+                                    {% if item.is_mapped %}
+                                        <span class="text-success">Importé</span>
+                                    {% else %}
+                                        <span class="text-muted">Non importé</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.is_mapped %}
+                                        <a href="{% url 'ui:product_edit' uuid=item.factpulse_uuid %}"
+                                           class="btn-sm">Voir</a>
+                                    {% else %}
+                                        <form method="post" class="api-key-revoke-form">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="import">
+                                            <input type="hidden" name="stripe_id" value="{{ item.id }}">
+                                            <button type="submit" class="btn-sm">Importer</button>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p class="text-muted">Aucun produit actif trouvé dans Stripe.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock content %}

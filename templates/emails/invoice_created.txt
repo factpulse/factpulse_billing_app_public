@@ -1,0 +1,14 @@
+Nouvelle facture à valider — {{ org_name }}
+
+Une facture a été importée automatiquement depuis Stripe et créée en
+brouillon. Elle doit être relue puis validée manuellement avant émission.
+
+  Référence   : {{ invoice_number }}
+  Client      : {{ customer_name }}
+  Montant TTC : {{ amount }} {{ currency }}
+  Statut      : {{ status }}
+
+Relire et valider la facture :
+{{ invoice_url }}
+
+— FactPulse Billing

@@ -1,0 +1,2 @@
+# Uploaded files live in the media_data volume, never in the image
+media/

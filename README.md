@@ -64,7 +64,7 @@ produire de factures conformes.
 ```bash
 cp .env.example .env
 make dev
-# -> http://localhost:8000 — Postgres, Redis, MinIO inclus
+# -> http://localhost:8000 — Postgres et Redis inclus
 ```
 
 ### Sans Docker (SQLite + [uv](https://docs.astral.sh/uv/))
@@ -120,7 +120,8 @@ Variables **obligatoires** :
 make prod
 ```
 
-Gunicorn + WhiteNoise, Postgres, Redis, MinIO, Celery worker + beat. Tout d'un coup.
+Gunicorn + WhiteNoise, Postgres, Redis, Celery worker + beat. Tout d'un coup.
+Les PDF et logos sont stockés dans le volume Docker `media_data` (ou sur un S3 si `AWS_*` est renseigné dans `.env`).
 
 ### 3. Initialiser la base
 
@@ -155,7 +156,7 @@ L'app ecoute sur `127.0.0.1:8100`. Collez un nginx / Caddy / Traefik devant pour
   │   └────┬─────┘      └──────┬───────┘      └──────┬───────┘        │
   │        │                   │                     │                │
   │   ┌────▼────┐       ┌──────▼──────┐      ┌───────▼─────┐          │
-  │   │Postgres │       │    Redis    │      │    MinIO    │          │
+  │   │Postgres │       │    Redis    │      │ media_data  │          │
   │   └─────────┘       └─────────────┘      └─────────────┘          │
   └───────────────────────────────────────────────────────────────────┘
 ```

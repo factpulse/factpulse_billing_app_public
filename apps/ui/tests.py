@@ -134,6 +134,49 @@ class TestPdpSettingsView:
         assert response.status_code == 200
         assert "Auth failed" in response.content.decode()
 
+    def test_toggle_active_deactivates(self):
+        self.client.login(username="pdp-owner@test.com", password="testpass123")
+        with patch("apps.factpulse.client.client") as mock_client:
+            mock_client.is_configured = True
+            mock_client.get_pdp_config.return_value = {
+                "isConfigured": True,
+                "isActive": True,
+            }
+
+            response = self.client.post("/settings/pdp/", {"action": "toggle_active"})
+
+        assert response.status_code == 302
+        mock_client.push_pdp_config.assert_called_once_with(
+            str(self.org.factpulse_client_uid), {"isActive": False}
+        )
+
+    def test_toggle_active_reactivates(self):
+        self.client.login(username="pdp-owner@test.com", password="testpass123")
+        with patch("apps.factpulse.client.client") as mock_client:
+            mock_client.is_configured = True
+            mock_client.get_pdp_config.return_value = {
+                "isConfigured": True,
+                "isActive": False,
+            }
+
+            response = self.client.post("/settings/pdp/", {"action": "toggle_active"})
+
+        assert response.status_code == 302
+        mock_client.push_pdp_config.assert_called_once_with(
+            str(self.org.factpulse_client_uid), {"isActive": True}
+        )
+
+    def test_toggle_active_requires_existing_config(self):
+        self.client.login(username="pdp-owner@test.com", password="testpass123")
+        with patch("apps.factpulse.client.client") as mock_client:
+            mock_client.is_configured = True
+            mock_client.get_pdp_config.return_value = {"isConfigured": False}
+
+            response = self.client.post("/settings/pdp/", {"action": "toggle_active"})
+
+        assert response.status_code == 302
+        mock_client.push_pdp_config.assert_not_called()
+
 
 # --- Signup view ---
 
@@ -1405,6 +1448,46 @@ class TestSupplierSettings:
         assert self.supplier.iban == "FR7630006000011234567890189"
         assert self.supplier.payment_terms_days == 30
         assert self.supplier.payment_terms_end_of_month is True
+
+    def test_post_updates_default_vat_exemption(self):
+        response = self.client.post(
+            f"/suppliers/{self.supplier.uuid}/settings/",
+            {
+                "default_vat_exemption_reason": "TVA non applicable, art. 293 B du CGI",
+                "default_vat_exemption_code": "VATEX-FR-FRANCHISE",
+            },
+        )
+        assert response.status_code == 302
+        self.supplier.refresh_from_db()
+        assert (
+            self.supplier.default_vat_exemption_reason
+            == "TVA non applicable, art. 293 B du CGI"
+        )
+        assert self.supplier.default_vat_exemption_code == "VATEX-FR-FRANCHISE"
+
+    def test_warning_shown_when_exemption_set_without_vat_number(self):
+        self.supplier.vat_number = ""
+        self.supplier.default_vat_exemption_reason = (
+            "TVA non applicable, art. 293 B du CGI"
+        )
+        self.supplier.save()
+
+        response = self.client.get(f"/suppliers/{self.supplier.uuid}/settings/")
+
+        assert response.status_code == 200
+        assert "BR-E-02" in response.content.decode()
+
+    def test_no_warning_when_vat_number_set(self):
+        self.supplier.vat_number = "FR12345678901"
+        self.supplier.default_vat_exemption_reason = (
+            "TVA non applicable, art. 293 B du CGI"
+        )
+        self.supplier.save()
+
+        response = self.client.get(f"/suppliers/{self.supplier.uuid}/settings/")
+
+        assert response.status_code == 200
+        assert "BR-E-02" not in response.content.decode()
 
 
 # ---------------------------------------------------------------------------

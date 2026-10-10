@@ -80,6 +80,23 @@ class TestSupplierViewSet:
         resp = auth_api_client.get(self.url)
         assert len(resp.json()["results"]) == 0
 
+    def test_update_default_vat_exemption(self, auth_api_client, org):
+        supplier = SupplierFactory(organization=org)
+        resp = auth_api_client.patch(
+            f"{self.url}{supplier.uuid}/",
+            {
+                "default_vat_exemption_reason": "TVA non applicable, art. 293 B du CGI",
+                "default_vat_exemption_code": "VATEX-FR-FRANCHISE",
+            },
+            format="json",
+        )
+        assert resp.status_code == 200
+        assert (
+            resp.json()["default_vat_exemption_reason"]
+            == "TVA non applicable, art. 293 B du CGI"
+        )
+        assert resp.json()["default_vat_exemption_code"] == "VATEX-FR-FRANCHISE"
+
 
 # --- Customer ViewSet ---
 

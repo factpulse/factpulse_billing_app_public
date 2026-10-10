@@ -2,6 +2,7 @@
 
 import logging
 from datetime import date
+from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 
@@ -259,16 +260,196 @@ def _handle_payment_failed(event, provider):
         txn.save(update_fields=["status", "updated_at"])
 
 
-def _handle_invoice_finalized(event, provider, provider_config):
-    """Create a Factur-X invoice from a Stripe subscription invoice.
+def import_stripe_invoice(organization, stripe_invoice, provider_config):
+    """Import a Stripe invoice as a draft FactPulse invoice.
 
-    Flow: Stripe invoice.finalized → create_invoice() + validate_invoice()
+    Used by both the webhook handler and the UI manual import. The invoice is
+    left in 'draft' status (no number assigned) for manual review and
+    validation — Stripe-imported invoices must not be auto-emitted.
+    Returns (invoice, created) where created=False if already imported.
     """
     from apps.billing.models import Invoice
 
-    stripe_invoice = event.raw_data.get("data", {}).get("object", {})
     stripe_invoice_id = stripe_invoice.get("id", "")
 
+    # Idempotence
+    existing = Invoice.objects.filter(
+        organization=organization,
+        external_id=stripe_invoice_id,
+        deleted_at__isnull=True,
+    ).first()
+    if existing:
+        logger.info(
+            "Invoice already exists for Stripe invoice %s (uuid=%s), skipping.",
+            stripe_invoice_id,
+            existing.uuid,
+        )
+        return existing, False
+
+    payload = _build_stripe_invoice_payload(
+        organization, stripe_invoice, provider_config
+    )
+
+    invoice, warnings = invoice_service.create_invoice(organization, payload)
+    if warnings:
+        logger.info("Invoice created with warnings: %s", warnings)
+
+    logger.info(
+        "Auto-created draft invoice %s from Stripe invoice %s (pending manual validation)",
+        invoice.uuid,
+        stripe_invoice_id,
+    )
+
+    _notify_invoice_created(invoice, organization)
+
+    return invoice, True
+
+
+def _build_stripe_invoice_payload(organization, stripe_invoice, provider_config):
+    """Build the create_invoice payload of a Stripe invoice, linking its customer."""
+    from apps.billing.models import Customer
+    from apps.payments.providers.stripe.mapper import stripe_invoice_to_payload
+    from apps.payments.providers.stripe.sync import import_customer_from_invoice
+
+    # Resolve customer — always link one, create if needed
+    customer_field = stripe_invoice.get("customer")
+    stripe_customer_id = (
+        customer_field.get("id")
+        if isinstance(customer_field, dict)
+        else (customer_field or "")
+    )
+    customer = None
+    if stripe_customer_id:
+        customer = Customer.objects.filter(
+            organization=organization, external_id=stripe_customer_id
+        ).first()
+        if not customer:
+            customer = import_customer_from_invoice(organization, stripe_invoice)
+
+    # Build product map for line enrichment
+    product_map = _build_stripe_product_map(organization, stripe_invoice)
+
+    # Build payload
+    payload = stripe_invoice_to_payload(
+        stripe_invoice,
+        provider_config=provider_config,
+        product_map=product_map,
+    )
+
+    # Link customer: the FactPulse Customer record is the source of truth for the
+    # recipient (same result as saving the draft from the edit form). Stripe's
+    # invoice-time data only seeds the Customer when it is first created.
+    if customer:
+        payload.get("en16931_data", {}).pop("recipient", None)
+        payload["customer_id"] = str(customer.uuid)
+
+    return payload
+
+
+def resync_stripe_invoice(invoice, provider_config, user=None):
+    """Rebuild a draft imported from Stripe from the current Stripe invoice.
+
+    The invoice is re-read through the API, so its data follows the API version
+    pinned by the SDK. Only drafts can be re-synced. Returns the invoice.
+    """
+    import stripe
+
+    if not (invoice.external_id or "").startswith("in_"):
+        raise ValueError("Cette facture ne provient pas de Stripe.")
+
+    stripe_invoice = stripe.Invoice.retrieve(
+        invoice.external_id,
+        api_key=provider_config.api_key,
+        expand=["customer"],
+    )
+    payload = _build_stripe_invoice_payload(
+        invoice.organization, dict(stripe_invoice), provider_config
+    )
+    invoice, warnings = invoice_service.replace_draft_data(invoice, payload, user=user)
+    if warnings:
+        logger.info("Invoice re-synced with warnings: %s", warnings)
+    return invoice
+
+
+def _notify_invoice_created(invoice, organization):
+    """Send an email notification to org owners when an invoice is auto-created."""
+    try:
+        from django.conf import settings
+        from django.core.mail import send_mail
+        from django.template.loader import render_to_string
+        from django.urls import reverse
+
+        from apps.core.models import OrganizationMembership
+
+        owners = OrganizationMembership.objects.filter(
+            organization=organization,
+            role=OrganizationMembership.Role.OWNER,
+        ).select_related("user")
+        recipients = [m.user.email for m in owners if m.user.email]
+        if not recipients:
+            return
+
+        site_url = settings.SITE_URL.rstrip("/")
+        invoice_path = reverse("ui:invoice_detail", kwargs={"uuid": invoice.uuid})
+
+        recipient_name = ""
+        if invoice.customer:
+            recipient_name = invoice.customer.name
+        else:
+            recipient_name = (
+                invoice.en16931_data.get("recipient", {}).get("name") or "—"
+            )
+
+        body = render_to_string(
+            "emails/invoice_created.txt",
+            {
+                "org_name": organization.name,
+                "invoice_number": invoice.number or str(invoice.uuid)[:8],
+                "customer_name": recipient_name,
+                "amount": invoice.total_incl_tax or "—",
+                "currency": invoice.currency_code,
+                "status": invoice.get_status_display(),
+                "invoice_url": f"{site_url}{invoice_path}",
+            },
+        )
+
+        send_mail(
+            subject=f"[FactPulse] Facture Stripe à valider — {organization.name}",
+            message=body,
+            from_email=None,
+            recipient_list=recipients,
+        )
+    except Exception:
+        logger.warning("Failed to send invoice created notification", exc_info=True)
+
+
+def _build_stripe_product_map(organization, stripe_invoice):
+    """Return {stripe_product_id: Product} for products found in FactPulse."""
+    from apps.billing.models import Product
+
+    stripe_product_ids = set()
+    for line in (stripe_invoice.get("lines") or {}).get("data", []):
+        price = line.get("price") or {}
+        pid = price.get("product") if isinstance(price, dict) else None
+        if pid and isinstance(pid, str):
+            stripe_product_ids.add(pid)
+
+    if not stripe_product_ids:
+        return {}
+
+    products = Product.objects.filter(
+        organization=organization,
+        external_id__in=stripe_product_ids,
+        archived=False,
+    )
+    return {p.external_id: p for p in products}
+
+
+def _handle_invoice_finalized(event, provider, provider_config):
+    """Create a draft invoice from a Stripe subscription invoice.
+
+    Flow: Stripe invoice.finalized → import_stripe_invoice() (draft, unnumbered)
+    """
     if not provider_config:
         logger.warning("No provider_config for invoice.finalized event, skipping.")
         return
@@ -281,40 +462,10 @@ def _handle_invoice_finalized(event, provider, provider_config):
         )
         return
 
+    stripe_invoice = event.raw_data.get("data", {}).get("object", {})
     organization = provider_config.organization
 
-    # Check if we already created an invoice for this Stripe invoice
-    existing = Invoice.objects.filter(
-        organization=organization,
-        external_id=stripe_invoice_id,
-        deleted_at__isnull=True,
-    ).first()
-    if existing:
-        logger.info(
-            "Invoice already exists for Stripe invoice %s (uuid=%s), skipping.",
-            stripe_invoice_id,
-            existing.uuid,
-        )
-        return
-
-    # Map Stripe invoice → create_invoice payload
-    from apps.payments.providers.stripe.mapper import stripe_invoice_to_payload
-
-    payload = stripe_invoice_to_payload(stripe_invoice, provider_config=provider_config)
-
-    # Create draft invoice
-    invoice, warnings = invoice_service.create_invoice(organization, payload)
-    if warnings:
-        logger.info("Invoice created with warnings: %s", warnings)
-
-    # Auto-validate (draft → processing → validated via Celery)
-    invoice_service.validate_invoice(invoice)
-
-    logger.info(
-        "Auto-created invoice %s from Stripe invoice %s",
-        invoice.uuid,
-        stripe_invoice_id,
-    )
+    import_stripe_invoice(organization, stripe_invoice, provider_config)
 
 
 def _handle_invoice_paid(event, provider):
@@ -347,12 +498,30 @@ def _handle_invoice_paid(event, provider):
         logger.info("Invoice %s already paid, skipping.", invoice.uuid)
         return
 
-    # Wait for validation to complete — if still processing, skip
+    # Invoice not yet validated/numbered — record the payment info on the
+    # draft so it's visible in the UI, but don't transition the status.
+    # mark_paid() will pick these pre-filled values up once the invoice is
+    # manually validated and transmitted.
     if invoice.status in (S.DRAFT, S.PROCESSING):
+        invoice.payment_date = date.today()
+        invoice.payment_reference = f"{provider}:{stripe_invoice_id}"
+        invoice.payment_amount = Decimal(
+            str((stripe_invoice.get("amount_paid") or 0) / 100)
+        )
+        invoice.save(
+            update_fields=[
+                "payment_date",
+                "payment_reference",
+                "payment_amount",
+                "updated_at",
+            ]
+        )
         logger.info(
-            "Invoice %s still in %s state, cannot mark paid yet.",
+            "Invoice %s still in %s state — recorded payment info from Stripe "
+            "invoice %s, status unchanged.",
             invoice.uuid,
             invoice.status,
+            stripe_invoice_id,
         )
         return
 

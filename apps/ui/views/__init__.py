@@ -34,11 +34,18 @@ from apps.ui.views.lookups import (  # noqa: F401
     pdp_settings,
     sirene_lookup,
 )
+from apps.ui.views.payments import payment_settings  # noqa: F401
 from apps.ui.views.products import (  # noqa: F401
     product_archive,
     product_create,
     product_edit,
     product_list,
+)
+from apps.ui.views.stripe_sync import (  # noqa: F401
+    stripe_customers,
+    stripe_invoice_resync,
+    stripe_invoices,
+    stripe_products,
 )
 from apps.ui.views.suppliers import (  # noqa: F401
     supplier_archive,

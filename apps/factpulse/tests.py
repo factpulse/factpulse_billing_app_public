@@ -1,6 +1,7 @@
 """Tests for FactPulse integration — client, signals, management command."""
 
 import uuid as uuid_lib
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
@@ -711,6 +712,132 @@ class TestPollCdarEvents:
 
         invoice.refresh_from_db()
         assert invoice.status == "refused"
+
+    @patch("apps.factpulse.tasks.client")
+    def test_auto_marks_paid_when_payment_already_recorded(
+        self, mock_client, org, supplier
+    ):
+        """A Stripe invoice.paid received before emission pre-fills payment_date.
+
+        Once the CDAR poll confirms transmission (200 -> transmitted), the
+        invoice should be auto-transitioned to "paid" and submit CDAR 212.
+        """
+        from datetime import date
+
+        from apps.billing.factories import InvoiceFactory
+        from apps.factpulse.tasks import poll_cdar_events
+
+        org.factpulse_client_uid = uuid_lib.uuid4()
+        org.save(update_fields=["factpulse_client_uid"])
+
+        invoice = InvoiceFactory(
+            organization=org,
+            supplier=supplier,
+            status="transmitting",
+            number="FA-2026-006",
+            pdp_transmission_id="flow-6",
+            payment_date=date(2026, 2, 10),
+            payment_reference="stripe:in_prepaid",
+            payment_amount=Decimal("100.00"),
+        )
+
+        mock_client.get_cdar_lifecycle.return_value = {
+            "invoices": [
+                {
+                    "sellerId": supplier.siren,
+                    "invoiceId": "FA-2026-006",
+                    "events": [
+                        {
+                            "statusCode": "200",
+                            "statusDescription": "Déposée",
+                            "at": "2026-02-17T10:00:00Z",
+                        },
+                    ],
+                    "totalEvents": 1,
+                }
+            ],
+        }
+
+        poll_cdar_events()
+
+        invoice.refresh_from_db()
+        assert invoice.status == "paid"
+        assert invoice.payment_reference == "stripe:in_prepaid"
+
+    @patch("apps.factpulse.tasks.client")
+    def test_no_auto_mark_paid_without_prior_payment(self, mock_client, org, supplier):
+        from apps.billing.factories import InvoiceFactory
+        from apps.factpulse.tasks import poll_cdar_events
+
+        org.factpulse_client_uid = uuid_lib.uuid4()
+        org.save(update_fields=["factpulse_client_uid"])
+
+        invoice = InvoiceFactory(
+            organization=org,
+            supplier=supplier,
+            status="transmitting",
+            number="FA-2026-007",
+            pdp_transmission_id="flow-7",
+        )
+
+        mock_client.get_cdar_lifecycle.return_value = {
+            "invoices": [
+                {
+                    "sellerId": supplier.siren,
+                    "invoiceId": "FA-2026-007",
+                    "events": [
+                        {
+                            "statusCode": "200",
+                            "statusDescription": "Déposée",
+                            "at": "2026-02-17T10:00:00Z",
+                        },
+                    ],
+                    "totalEvents": 1,
+                }
+            ],
+        }
+
+        poll_cdar_events()
+
+        invoice.refresh_from_db()
+        assert invoice.status == "transmitted"
+
+    @patch("apps.factpulse.tasks.client")
+    def test_afnor_fallback_ok_auto_marks_paid_when_payment_already_recorded(
+        self, mock_client, org, supplier
+    ):
+        from datetime import date
+
+        from apps.billing.factories import InvoiceFactory
+        from apps.factpulse.tasks import poll_cdar_events
+
+        org.factpulse_client_uid = uuid_lib.uuid4()
+        org.save(update_fields=["factpulse_client_uid"])
+
+        invoice = InvoiceFactory(
+            organization=org,
+            supplier=supplier,
+            status="transmitting",
+            number="FA-2026-008",
+            pdp_transmission_id="flow-8",
+            payment_date=date(2026, 2, 10),
+            payment_amount=Decimal("100.00"),
+        )
+
+        # No CDAR events returned, but AFNOR flow says Ok
+        mock_client.get_cdar_lifecycle.return_value = {
+            "invoices": [],
+            "totalInvoices": 0,
+        }
+        mock_client.get_flow_status.return_value = {
+            "flowId": "flow-8",
+            "acknowledgement": {"status": "Ok"},
+        }
+
+        poll_cdar_events()
+
+        invoice.refresh_from_db()
+        assert invoice.status == "paid"
 
 
 # =====================================================================

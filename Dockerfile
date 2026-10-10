@@ -30,7 +30,7 @@ WORKDIR /app
 
 # Install Python dependencies (cached layer)
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project --extra sentry
+RUN uv sync --frozen --no-dev --no-install-project --extra sentry --extra payments
 
 # Copy source code
 COPY . .
@@ -47,6 +47,8 @@ RUN chmod +x /app/docker-entrypoint.sh
 
 # Create non-root user with a writable home directory (needed for uv cache)
 RUN addgroup --system app && adduser --system --home /home/app --ingroup app app
+# Uploaded files volume mount point (must exist so the volume inherits app ownership)
+RUN mkdir -p /app/media
 RUN chown -R app:app /app /home/app
 USER app
 

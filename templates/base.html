@@ -142,6 +142,8 @@
                         {% if is_owner %}
                             <a href="{% url 'ui:pdp_settings' %}"
                                {% if request.resolver_match.url_name == 'pdp_settings' %}class="active"{% endif %}>Plateforme agréée</a>
+                            <a href="{% url 'ui:payment_settings' %}"
+                               {% if request.resolver_match.url_name == 'payment_settings' %}class="active"{% endif %}>Paiements</a>
                         {% endif %}
                         <a href="{% url 'ui:guide' %}"
                            {% if request.resolver_match.url_name == 'guide' %}class="active"{% endif %}>Guide</a>

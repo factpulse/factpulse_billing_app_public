@@ -95,6 +95,12 @@ def supplier_settings(request, uuid):
         vat_regime = request.POST.get("vat_regime", "")
         if vat_regime in Supplier.VatRegime.values:
             supplier.vat_regime = vat_regime
+        supplier.default_vat_exemption_reason = request.POST.get(
+            "default_vat_exemption_reason", ""
+        ).strip()
+        supplier.default_vat_exemption_code = request.POST.get(
+            "default_vat_exemption_code", ""
+        ).strip()
         if request.FILES.get("logo"):
             supplier.logo = request.FILES["logo"]
         if request.POST.get("logo_clear") == "on":

@@ -15,7 +15,7 @@ def enrich_en16931_data(en16931_data, supplier=None):
 
     Mutates en16931_data in place and returns it.
     """
-    _enrich_lines(en16931_data)
+    _enrich_lines(en16931_data, supplier)
     _enrich_totals(en16931_data)
     _enrich_dates(en16931_data, supplier)
     _enrich_references(en16931_data)
@@ -23,7 +23,7 @@ def enrich_en16931_data(en16931_data, supplier=None):
     return en16931_data
 
 
-def _enrich_lines(en16931_data):
+def _enrich_lines(en16931_data, supplier=None):
     """Ensure each invoice line has lineNumber, unit, unitNetPrice, vatCategory."""
     lines = en16931_data.get("invoiceLines", [])
     for i, line in enumerate(lines):
@@ -50,10 +50,42 @@ def _enrich_lines(en16931_data):
                 (qty * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             )
 
+    _apply_default_vat_exemption(lines, supplier)
+
+
+def _apply_default_vat_exemption(lines, supplier):
+    """Apply the supplier's default VAT exemption (BT-120/BT-121) to 0% lines.
+
+    A supplier that never charges VAT (e.g. franchise en base, art. 293B du
+    CGI) can configure a default exemption reason and/or VATEX code on their
+    profile. Any line at 0% VAT without its own exemption info is stamped
+    with category "E" (Exempt) and that default — required by BR-E-10.
+    """
+    if not supplier:
+        return
+    reason = supplier.default_vat_exemption_reason
+    code = supplier.default_vat_exemption_code
+    if not reason and not code:
+        return
+
+    for line in lines:
+        rate = Decimal(str(line.get("manualVatRate", "0")))
+        if rate != 0:
+            continue
+        if line.get("exemptionReason") or line.get("vatexCode"):
+            continue
+        line["vatCategory"] = "E"
+        if reason:
+            line["exemptionReason"] = reason
+        if code:
+            line["vatexCode"] = code
+
 
 def _enrich_totals(en16931_data):
     """Compute totals and vatLines if not provided."""
-    if "totals" in en16931_data:
+    has_totals = "totals" in en16931_data
+    has_vat_lines = "vatLines" in en16931_data
+    if has_totals and has_vat_lines:
         return
 
     lines = en16931_data.get("invoiceLines", [])
@@ -69,6 +101,10 @@ def _enrich_totals(en16931_data):
         key = (rate_str, category)
         bucket = vat_buckets.setdefault(key, {"base": Decimal("0"), "rate": rate_str})
         bucket["base"] += line_net
+        if line.get("exemptionReason"):
+            bucket.setdefault("exemptionReason", line["exemptionReason"])
+        if line.get("vatexCode"):
+            bucket.setdefault("vatexCode", line["vatexCode"])
 
     total_vat = Decimal("0")
     vat_lines = []
@@ -78,24 +114,26 @@ def _enrich_totals(en16931_data):
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
         total_vat += vat_amount
-        vat_lines.append(
-            {
-                "taxableAmount": str(bucket["base"]),
-                "manualRate": rate_str,
-                "vatAmount": str(vat_amount),
-                "category": category,
-            }
-        )
+        vat_line = {
+            "taxableAmount": str(bucket["base"]),
+            "manualRate": rate_str,
+            "vatAmount": str(vat_amount),
+            "category": category,
+            "exemptionReason": bucket.get("exemptionReason", ""),
+            "vatexCode": bucket.get("vatexCode", ""),
+        }
+        vat_lines.append(vat_line)
 
     total_gross = total_net + total_vat
-    en16931_data["totals"] = {
-        "totalNetAmount": str(total_net),
-        "vatAmount": str(total_vat),
-        "totalGrossAmount": str(total_gross),
-        "amountDue": str(total_gross),
-    }
+    if not has_totals:
+        en16931_data["totals"] = {
+            "totalNetAmount": str(total_net),
+            "vatAmount": str(total_vat),
+            "totalGrossAmount": str(total_gross),
+            "amountDue": str(total_gross),
+        }
 
-    if "vatLines" not in en16931_data:
+    if not has_vat_lines:
         en16931_data["vatLines"] = vat_lines
 
 

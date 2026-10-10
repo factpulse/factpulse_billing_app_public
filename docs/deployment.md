@@ -54,7 +54,7 @@ python3 -c "from django.core.management.utils import get_random_secret_key; prin
 make prod
 ```
 
-This starts gunicorn + WhiteNoise (static files), PostgreSQL, Redis, MinIO, Celery worker, and Celery Beat.
+This starts gunicorn + WhiteNoise (static files), PostgreSQL, Redis, Celery worker, and Celery Beat. Uploaded files are stored in the `media_data` Docker volume (see [Storage Backends](#storage-backends)).
 
 The entrypoint script automatically runs migrations, collects static files, and compiles translations on each startup.
 
@@ -113,7 +113,7 @@ DJANGO_SUPERUSER_PASSWORD=<strong-password>
 make selfhost
 ```
 
-This starts all services (PostgreSQL, Redis, MinIO, web, Celery worker, Celery beat) plus a Caddy reverse proxy that automatically provisions SSL certificates via Let's Encrypt.
+This starts all services (PostgreSQL, Redis, web, Celery worker, Celery beat) plus a Caddy reverse proxy that automatically provisions SSL certificates via Let's Encrypt.
 
 `SECURE_SSL_REDIRECT` is set to `false` automatically — Caddy handles SSL termination.
 
@@ -208,10 +208,10 @@ Use systemd or supervisor to manage these processes in production.
 | `CELERY_BROKER_URL` | Yes | `redis://redis:6379/0` | Redis URL for Celery |
 | `DJANGO_SUPERUSER_EMAIL` | No | - | Auto-create superuser on startup |
 | `DJANGO_SUPERUSER_PASSWORD` | No | - | Password for auto-created superuser |
-| `AWS_ACCESS_KEY_ID` | No | - | S3/MinIO access key |
-| `AWS_SECRET_ACCESS_KEY` | No | - | S3/MinIO secret key |
-| `AWS_STORAGE_BUCKET_NAME` | No | `factpulse-billing` | S3/MinIO bucket name |
-| `AWS_S3_ENDPOINT_URL` | No | - | MinIO endpoint (omit for AWS S3) |
+| `AWS_ACCESS_KEY_ID` | No | - | S3 access key |
+| `AWS_SECRET_ACCESS_KEY` | No | - | S3 secret key |
+| `AWS_STORAGE_BUCKET_NAME` | No | - | S3 bucket name — setting it switches file storage to S3 |
+| `AWS_S3_ENDPOINT_URL` | No | - | S3-compatible endpoint (omit for AWS S3) |
 | `CORS_ALLOWED_ORIGINS` | No | - | CORS origins (comma-separated) |
 | `CSRF_TRUSTED_ORIGINS` | No | - | CSRF trusted origins |
 | `EMAIL_BACKEND` | No | `console` | Email backend class |
@@ -277,20 +277,24 @@ uv sync --extra payments  # installs stripe + gocardless-pro
 
 ## Storage Backends
 
-### MinIO (default for Docker)
+### Docker volume (default)
 
-The Docker Compose setup includes a MinIO instance for S3-compatible storage. PDFs and uploaded files are stored there.
+Factur-X PDFs and supplier logos are stored on the filesystem, in the `media_data` Docker volume mounted on `/app/media` by the web, worker and beat containers. No extra service is needed. Leave the `AWS_*` variables unset.
+
+### S3-compatible storage
+
+Setting `AWS_STORAGE_BUCKET_NAME` switches file storage to S3. Use it when the containers run on several hosts, or to keep files on a managed service.
+
+For an S3-compatible provider (Scaleway, OVH, a self-hosted MinIO or Garage…):
 
 ```env
-AWS_ACCESS_KEY_ID=minioadmin
-AWS_SECRET_ACCESS_KEY=minioadmin
-AWS_STORAGE_BUCKET_NAME=factpulse-billing
-AWS_S3_ENDPOINT_URL=http://minio:9000
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_STORAGE_BUCKET_NAME=your-bucket-name
+AWS_S3_ENDPOINT_URL=https://s3.fr-par.scw.cloud
 ```
 
-### AWS S3
-
-For AWS S3, remove `AWS_S3_ENDPOINT_URL` and configure:
+For AWS S3, omit `AWS_S3_ENDPOINT_URL` and configure:
 
 ```env
 AWS_ACCESS_KEY_ID=your-access-key
@@ -299,9 +303,22 @@ AWS_STORAGE_BUCKET_NAME=your-bucket-name
 AWS_S3_REGION_NAME=eu-west-1
 ```
 
-### Local filesystem
+### Local filesystem (without Docker)
 
-For development without object storage, the application falls back to local file storage in the `media/` directory.
+For development without Docker, files are stored in the `media/` directory.
+
+### Migrating from the former bundled MinIO
+
+Earlier versions shipped a MinIO container, whose images are no longer publicly downloadable. To move existing files to the `media_data` volume, keep the MinIO container running and the `AWS_*` variables in `.env`, then:
+
+```bash
+DC="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+$DC up --build -d --no-deps billing-web celery-worker celery-beat
+$DC exec billing-web uv run python manage.py copy_media_from_s3 --dry-run
+$DC exec billing-web uv run python manage.py copy_media_from_s3
+```
+
+The command checks that every PDF and logo referenced in the database is present locally. Then comment out the `AWS_*` variables in `.env`, recreate the containers (`$DC up -d --no-deps --force-recreate billing-web celery-worker celery-beat`), and remove the old container with `$DC up -d --remove-orphans`. Keep the `minio_data` volume until you have checked the migration.
 
 ## Architecture
 
@@ -319,7 +336,7 @@ For development without object storage, the application falls back to local file
          |  +---+----+  +---+----+  +---+----+  |
          |      |            |           |       |
          |  +---+--+  +-----+--+  +-----+--+   |
-         |  |Postgres| |  Redis |  |  MinIO |   |
+         |  |Postgres| |  Redis |  | media  |   |
          |  +--------+ +--------+  +--------+   |
          +--------------------------------------+
 ```
@@ -338,7 +355,7 @@ For development without object storage, the application falls back to local file
          |  +---+----+  +---+----+  +---+----+       |
          |      |            |           |            |
          |  +---+--+  +-----+--+  +-----+--+        |
-         |  |Postgres| |  Redis |  |  MinIO |        |
+         |  |Postgres| |  Redis |  | media  |        |
          |  +--------+ +--------+  +--------+        |
          +--------------------------------------------+
 ```

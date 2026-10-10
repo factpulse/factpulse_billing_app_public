@@ -7,7 +7,7 @@ This guide covers what to back up and how to restore the FactPulse Billing App.
 | Data | Storage | Critical | Notes |
 |------|---------|----------|-------|
 | PostgreSQL database | `postgres_data` Docker volume or host DB | **Yes** | All invoices, customers, suppliers, users, webhook config, numbering sequences |
-| Uploaded files (PDFs, logos) | MinIO (`minio_data` volume), AWS S3, or local `media/` | **Yes** | Factur-X PDFs, supplier logos |
+| Uploaded files (PDFs, logos) | `media_data` Docker volume, S3 bucket, or local `media/` | **Yes** | Factur-X PDFs, supplier logos |
 | `.env` file | Host filesystem | **Yes** | Contains `SECRET_KEY`, database password, API credentials |
 
 ### What you do NOT need to back up
@@ -49,26 +49,20 @@ pg_dump -U factpulse -Fc factpulse_billing > backup_$(date +%Y%m%d_%H%M%S).dump
 
 ## Uploaded files
 
-### MinIO (Docker default)
+### Docker volume (default)
+
+The volume name is prefixed with the Compose project name, i.e. the directory name (`docker volume ls | grep media_data`):
 
 ```bash
-# Install mc (MinIO Client) on the host, then:
-mc alias set local http://localhost:9000 minioadmin minioadmin
-mc mirror local/factpulse-billing /backups/minio/factpulse-billing/
+docker run --rm -v factpulse_billing_app_media_data:/data -v /backups:/backup \
+  alpine tar czf /backup/media_$(date +%Y%m%d).tar.gz -C /data .
 ```
 
-Or back up the Docker volume directly:
+### S3
 
-```bash
-docker run --rm -v factpulse_billing_app_minio_data:/data -v /backups:/backup \
-  alpine tar czf /backup/minio_$(date +%Y%m%d).tar.gz -C /data .
-```
+If you use S3 storage, your files are already on a managed service. Enable [S3 versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) on your bucket for built-in protection against accidental deletions.
 
-### AWS S3
-
-If you use AWS S3 instead of MinIO, your files are already on a managed service. Enable [S3 versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) on your bucket for built-in protection against accidental deletions.
-
-### Local filesystem
+### Local filesystem (without Docker)
 
 If using local storage (`media/` directory):
 
@@ -114,12 +108,9 @@ python manage.py migrate
 ### 2. Restore uploaded files
 
 ```bash
-# MinIO (via mc)
-mc mirror /backups/minio/factpulse-billing/ local/factpulse-billing/
-
-# MinIO (via Docker volume)
-docker run --rm -v factpulse_billing_app_minio_data:/data -v /backups:/backup \
-  alpine tar xzf /backup/minio_YYYYMMDD.tar.gz -C /data
+# Docker volume
+docker run --rm -v factpulse_billing_app_media_data:/data -v /backups:/backup \
+  alpine tar xzf /backup/media_YYYYMMDD.tar.gz -C /data
 
 # Local filesystem
 tar xzf /backups/media_YYYYMMDD.tar.gz

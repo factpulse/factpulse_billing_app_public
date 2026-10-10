@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}
+    Factures Stripe — FactPulse Billing
+{% endblock title %}
+{% block content %}
+    <div class="topbar">
+        <h1>Factures Stripe</h1>
+        <a href="{% url 'ui:payment_settings' %}" role="button" class="outline">Retour</a>
+    </div>
+    {% if messages %}
+        <div class="mb-1">
+            {% for message in messages %}
+                <div class="{% if message.tags == 'success' %}sandbox-banner{% else %}degraded-banner{% endif %}">{{ message }}</div>
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% if not has_supplier %}
+        <div class="degraded-banner">
+            Configurez un <strong>fournisseur par défaut</strong> dans
+            <a href="{% url 'ui:payment_settings' %}">Paramètres Paiements</a>
+            avant d'importer des factures.
+        </div>
+    {% endif %}
+    {% if api_error %}
+        <div class="degraded-banner">Erreur API Stripe : {{ api_error }}</div>
+    {% else %}
+        <div class="section-box">
+            {% if stripe_list %}
+                <table class="pdp-status-table">
+                    <thead>
+                        <tr>
+                            <th>Numéro</th>
+                            <th>Client</th>
+                            <th>Montant</th>
+                            <th>Statut Stripe</th>
+                            <th>FactPulse</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in stripe_list %}
+                            <tr>
+                                <td>
+                                    <code>{{ item.number }}</code>
+                                </td>
+                                <td>{{ item.customer_name }}</td>
+                                <td>{{ item.amount }}</td>
+                                <td>{{ item.status }}</td>
+                                <td>
+                                    {% if item.is_imported %}
+                                        <span class="text-success">Importée</span>
+                                    {% else %}
+                                        <span class="text-muted">Non importée</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if item.is_imported %}
+                                        <a href="{% url 'ui:invoice_detail' uuid=item.factpulse_uuid %}"
+                                           class="btn-sm">Voir</a>
+                                    {% elif has_supplier %}
+                                        <form method="post" class="api-key-revoke-form">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="import">
+                                            <input type="hidden" name="stripe_invoice_id" value="{{ item.id }}">
+                                            <input type="hidden" name="cursor" value="{{ current_cursor|default:'' }}">
+                                            <button type="submit" class="btn-sm">Importer</button>
+                                        </form>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <!-- Pagination -->
+                <div class="form-actions">
+                    {% if current_cursor %}
+                        <a href="{% url 'ui:stripe_invoices' %}" role="button" class="outline">← Début</a>
+                    {% endif %}
+                    {% if has_more and next_cursor %}
+                        <a href="{% url 'ui:stripe_invoices' %}?cursor={{ next_cursor }}"
+                           role="button"
+                           class="outline">Page suivante →</a>
+                    {% endif %}
+                </div>
+            {% else %}
+                <p class="text-muted">Aucune facture trouvée dans Stripe.</p>
+            {% endif %}
+        </div>
+    {% endif %}
+{% endblock content %}

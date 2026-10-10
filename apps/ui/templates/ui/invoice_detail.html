@@ -29,6 +29,15 @@
                     {% csrf_token %}
                     <button type="submit">Valider</button>
                 </form>
+                {% if stripe_enabled and invoice.external_id|slice:":3" == "in_" %}
+                    <form method="post"
+                          action="{% url 'ui:stripe_invoice_resync' uuid=invoice.uuid %}"
+                          class="form-inline"
+                          onsubmit="if(!confirm('Remplacer ce brouillon par les données actuelles de la facture Stripe ? Les modifications manuelles seront perdues.')) return false; this.querySelector('button').disabled=true; this.querySelector('button').setAttribute('aria-busy','true');">
+                        {% csrf_token %}
+                        <button type="submit" class="outline">Resynchroniser depuis Stripe</button>
+                    </form>
+                {% endif %}
                 {% if not invoice.number %}
                     <form method="post"
                           action="{% url 'ui:invoice_delete' uuid=invoice.uuid %}"

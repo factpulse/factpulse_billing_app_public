@@ -150,7 +150,25 @@ To configure Stripe:
 
 #### Stripe Subscriptions (automatic invoicing)
 
-If a default supplier is configured, invoices from Stripe Billing subscriptions are automatically converted into Factur-X invoices, validated, and marked as paid — with zero manual intervention.
+If a default supplier is configured, invoices from Stripe Billing (subscriptions or one-off) are automatically converted into Factur-X invoices and validated — with zero manual intervention.
+
+When a `invoice.finalized` event is received:
+1. The Stripe invoice is converted to a FactPulse invoice (EN 16931 format).
+2. The customer is matched by Stripe ID, or created automatically if not found.
+3. Line items are enriched with product data (VAT rate, unit code) if the product is synced.
+4. The invoice is validated and a **notification email** is sent to all org owners.
+
+When a `invoice.paid` event is received, the corresponding FactPulse invoice is automatically marked as paid.
+
+#### Syncing Stripe customers, products, and invoice history
+
+Before enabling webhooks, or to import existing data, use the sync pages under **Settings > Payments**:
+
+- **Stripe customers** — lists all Stripe customers; import individually or all at once. Imported customers are matched by Stripe ID on future invoices.
+- **Stripe products** — lists all Stripe products with their default price; import individually or all at once. Imported products carry VAT rate, unit code, and description into auto-created invoices.
+- **Stripe invoices** — paginated list of historical Stripe invoices; import individually to create the corresponding Factur-X invoice in FactPulse.
+
+> Syncing customers and products first ensures that webhook-generated invoices are enriched with correct tax data (SIREN, VAT number, UN/ECE unit codes).
 
 #### Other payment providers
 
@@ -163,6 +181,10 @@ Owners can configure the certified platform connection settings:
 1. Go to **Settings** > **PDP Settings**
 2. View or update the configuration pushed to FactPulse
 3. This is only available if the organization has been provisioned with a FactPulse client
+
+Once a connection is configured, a **Désactiver la connexion** button suspends invoice
+transmission to the certified platform without losing the saved credentials — click
+**Réactiver la connexion** to resume.
 
 If FactPulse is not configured, a banner indicates that the app is running in degraded mode.
 

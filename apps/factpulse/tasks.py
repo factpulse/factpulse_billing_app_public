@@ -654,6 +654,28 @@ def _process_single_cdar_event(invoice, seller_id, invoice_id, event, existing_k
             },
         )
 
+        _maybe_auto_mark_paid(invoice)
+
+
+def _maybe_auto_mark_paid(invoice):
+    """Complete the "paid before emission" loop.
+
+    If a Stripe ``invoice.paid`` was already recorded while this invoice was
+    still a draft (payment_date/amount/reference pre-filled), and it has just
+    become payable (transmitted/accepted), transition it straight to "paid"
+    so the CDAR 212 (encaissée) is submitted without a manual "Marquer payée".
+    """
+    if not invoice.payment_date or not can_transition(invoice.status, S.PAID):
+        return
+
+    try:
+        invoice_service.mark_paid(invoice)
+    except Exception:
+        logger.exception(
+            "Failed to auto-mark invoice %s as paid (pre-recorded payment)",
+            invoice.uuid,
+        )
+
 
 def _check_afnor_flow_fallback(org, client_uid, invoice_number, invoices_with_cdar):
     """Check AFNOR flow status for transmitting invoices with no CDAR events."""
@@ -727,6 +749,9 @@ def _apply_flow_fallback(invoice, new_status, pdp_status, flow, error=None):
         new_status=new_status,
         details={"source": "afnor_flow_fallback", "afnor_flow": flow},
     )
+
+    if new_status == S.TRANSMITTED:
+        _maybe_auto_mark_paid(invoice)
 
 
 def _generate_source_pdf(invoice):

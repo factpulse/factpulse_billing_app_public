@@ -48,9 +48,13 @@ _csrf_origins = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
 if _csrf_origins:
     CSRF_TRUSTED_ORIGINS = [o.strip() for o in _csrf_origins.split(",")]
 
+# Uploaded files (Factur-X PDFs, logos): local volume mounted on /app/media by
+# default; S3-compatible storage only when a bucket is configured in .env.
 STORAGES = {
     "default": {
-        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",
+        "BACKEND": "storages.backends.s3boto3.S3Boto3Storage"
+        if os.environ.get("AWS_STORAGE_BUCKET_NAME")
+        else "django.core.files.storage.FileSystemStorage",
     },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",

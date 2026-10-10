@@ -183,6 +183,13 @@
             background: #f0f0f0;
         }
 
+        .vat-exemption-note {
+            margin-top: 6px;
+            font-size: 8pt;
+            font-style: italic;
+            color: #555;
+        }
+
         .legal-notes {
             clear: both;
             margin-top: 30px;
@@ -353,6 +360,13 @@
                 {% endfor %}
             </tbody>
         </table>
+        {% for vat in vat_lines %}
+            {% if vat.exemptionReason %}
+            <p class="vat-exemption-note">{{ vat.exemptionReason }}</p>
+            {% elif vat.vatexCode %}
+            <p class="vat-exemption-note">{{ vat.vatexCode }}</p>
+            {% endif %}
+        {% endfor %}
     </div>
     {% endif %}
 

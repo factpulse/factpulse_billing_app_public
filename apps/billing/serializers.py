@@ -72,6 +72,8 @@ class SupplierSerializer(OrganizationCreateMixin, serializers.ModelSerializer):
             "note_pmd",
             "note_aab",
             "vat_regime",
+            "default_vat_exemption_reason",
+            "default_vat_exemption_code",
             "payment_terms_days",
             "payment_terms_end_of_month",
             "archived",

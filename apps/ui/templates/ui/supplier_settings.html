@@ -135,6 +135,36 @@
                 <option value="franchise"
                         {% if supplier.vat_regime == "franchise" %}selected{% endif %}>Franchise en base</option>
             </select>
+            <div class="form-row">
+                <label for="default_vat_exemption_reason">Motif d'exonération de TVA par défaut (BT-120)</label>
+                <input type="text"
+                       id="default_vat_exemption_reason"
+                       name="default_vat_exemption_reason"
+                       value="{{ supplier.default_vat_exemption_reason }}"
+                       placeholder="TVA non applicable, art. 293 B du CGI">
+                <p class="section-hint">
+                    Si renseigné, appliqué automatiquement (catégorie TVA « Exonéré »)
+                    à toutes les lignes facturées à 0 % — y compris les factures
+                    importées de Stripe.
+                </p>
+            </div>
+            <div class="form-row">
+                <label for="default_vat_exemption_code">Code VATEX par défaut (BT-121, optionnel)</label>
+                <input type="text"
+                       id="default_vat_exemption_code"
+                       name="default_vat_exemption_code"
+                       value="{{ supplier.default_vat_exemption_code }}"
+                       placeholder="VATEX-FR-FRANCHISE">
+            </div>
+            {% if not supplier.vat_number %}
+                {% if supplier.default_vat_exemption_reason or supplier.default_vat_exemption_code %}
+                    <p class="section-hint text-warning-bold">
+                        ⚠️ Le numéro de TVA intracommunautaire (BT-31) n'est pas renseigné
+                        sur la fiche fournisseur. Il est obligatoire pour qu'une facture
+                        exonérée soit conforme (BR-E-02), même en franchise en base.
+                    </p>
+                {% endif %}
+            {% endif %}
         </div>
         <button type="submit" class="btn-submit-full">Enregistrer</button>
     </form>

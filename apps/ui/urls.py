@@ -79,6 +79,11 @@ urlpatterns = [
     ),
     path("invoices/<uuid:uuid>/cancel/", views.invoice_cancel, name="invoice_cancel"),
     path("invoices/<uuid:uuid>/delete/", views.invoice_delete, name="invoice_delete"),
+    path(
+        "invoices/<uuid:uuid>/stripe-resync/",
+        views.stripe_invoice_resync,
+        name="stripe_invoice_resync",
+    ),
     # Customers
     path("customers/", views.customer_list, name="customer_list"),
     path("customers/new/", views.customer_create, name="customer_create"),
@@ -116,6 +121,22 @@ urlpatterns = [
     ),
     # Settings
     path("settings/pdp/", views.pdp_settings, name="pdp_settings"),
+    path("settings/payments/", views.payment_settings, name="payment_settings"),
+    path(
+        "settings/payments/stripe/customers/",
+        views.stripe_customers,
+        name="stripe_customers",
+    ),
+    path(
+        "settings/payments/stripe/products/",
+        views.stripe_products,
+        name="stripe_products",
+    ),
+    path(
+        "settings/payments/stripe/invoices/",
+        views.stripe_invoices,
+        name="stripe_invoices",
+    ),
     path("settings/api-keys/", views.api_key_list, name="api_key_list"),
     # SIRENE lookup
     path("sirene-lookup/", views.sirene_lookup, name="sirene_lookup"),
