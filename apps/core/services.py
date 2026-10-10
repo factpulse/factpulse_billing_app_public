@@ -6,8 +6,9 @@ from django.contrib.auth.models import User
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
+from django.utils.http import urlencode, urlsafe_base64_encode
 from django.utils.text import slugify
 
 from apps.core.tokens import email_verification_token
@@ -93,22 +94,20 @@ def create_account(email, password, org_name):
     return user, org
 
 
-def send_verification_email(user, request):
-    """Send an email-verification link to *user*."""
+def send_verification_email(user, request, next_url=""):
+    """Send an email-verification link to *user* (resuming at *next_url* if set)."""
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = email_verification_token.make_token(user)
-    protocol = "https" if request.is_secure() else "http"
-    domain = request.get_host()
+    verify_url = request.build_absolute_uri(
+        reverse("ui:verify_email", kwargs={"uidb64": uid, "token": token})
+    )
+    if next_url:
+        verify_url += "?" + urlencode({"next": next_url})
 
+    # The URL is built here: template formatters must not wrap it
     body = render_to_string(
         "registration/email_verification.html",
-        {
-            "user": user,
-            "protocol": protocol,
-            "domain": domain,
-            "uid": uid,
-            "token": token,
-        },
+        {"user": user, "verify_url": verify_url},
     )
 
     send_mail(

@@ -252,13 +252,27 @@ def _entity_to_en16931(entity, extra_fields=None):
 
 def _supplier_to_en16931(supplier):
     """Convert a Supplier model instance to EN16931 supplier data."""
-    return _entity_to_en16931(
+    data = _entity_to_en16931(
         supplier,
         extra_fields=[
             ("iban", "iban"),
             ("bic", "bic"),
             ("legal_description", "legalDescription"),
         ],
+    )
+    # Franchise en base without an intra-community VAT number: the SIREN is
+    # sent as seller tax registration identifier (BT-32, schemeID FC), which
+    # satisfies BR-E-02 instead of BT-31.
+    if _uses_tax_registration_id(supplier):
+        data["taxRegistrationId"] = supplier.siren
+    return data
+
+
+def _uses_tax_registration_id(supplier):
+    return (
+        supplier.vat_regime == supplier.VatRegime.FRANCHISE
+        and not supplier.vat_number
+        and bool(supplier.siren)
     )
 
 

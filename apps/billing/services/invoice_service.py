@@ -262,16 +262,20 @@ def validate_invoice(invoice, user=None):
     """
     state_machine.validate_transition(invoice, S.PROCESSING)
 
-    # Validate supplier has IBAN (required for Factur-X BR-CO-27)
-    if invoice.supplier and not invoice.supplier.iban:
+    # Validate supplier has IBAN for a credit transfer (BR-50/BR-61: BT-84 is
+    # only required for transfers — not for card or direct debit payments)
+    payment_means = invoice.en16931_data.get("references", {}).get(
+        "paymentMeans", "VIREMENT"
+    )
+    if payment_means == "VIREMENT" and invoice.supplier and not invoice.supplier.iban:
         raise ValueError(
             f"Le fournisseur « {invoice.supplier.name} » n'a pas d'IBAN renseigné. "
             "L'IBAN est obligatoire pour générer une facture Factur-X conforme (BT-84)."
         )
 
-    # An exonération de TVA par défaut (catégorie E) requires the Seller VAT
-    # identifier (BT-31) per BR-E-02 — facture_electronique only maps
-    # SpecifiedTaxRegistration from supplier.vat_number.
+    # An exonération de TVA par défaut (catégorie E) requires a seller tax
+    # identifier per BR-E-02: the VAT number (BT-31) or, in franchise en base,
+    # the SIREN sent as tax registration identifier (BT-32).
     if (
         invoice.supplier
         and (
@@ -279,12 +283,13 @@ def validate_invoice(invoice, user=None):
             or invoice.supplier.default_vat_exemption_code
         )
         and not invoice.supplier.vat_number
+        and not resolution_service._uses_tax_registration_id(invoice.supplier)
     ):
         raise ValueError(
             f"Le fournisseur « {invoice.supplier.name} » a une exonération de TVA "
-            "par défaut configurée mais pas de numéro de TVA intracommunautaire. "
-            "Le numéro de TVA (BT-31) est obligatoire pour une facture exonérée "
-            "conforme (BR-E-02), même en franchise en base."
+            "par défaut configurée mais ni numéro de TVA intracommunautaire, ni "
+            "SIREN en franchise en base. L'un des deux est obligatoire pour une "
+            "facture exonérée conforme (BR-E-02)."
         )
 
     with transaction.atomic():

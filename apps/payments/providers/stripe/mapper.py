@@ -190,19 +190,18 @@ def _resolve_payment_means(stripe_invoice):
 
     ``payment_settings.payment_method_types`` is null when the account defaults
     apply; an automatically charged invoice is then paid with the customer's
-    saved card. Card has no dedicated code in the library: "AUTRE" is the value
-    the invoice form labels "Carte bancaire".
+    saved card ("CARTE" = UNTDID 4461 code 48, no IBAN required).
     """
     payment_settings = stripe_invoice.get("payment_settings") or {}
     types = payment_settings.get("payment_method_types") or []
     if "card" in types:
-        return "AUTRE"
+        return "CARTE"
     if "sepa_debit" in types:
         return "PRELEVEMENT"
     if types:
         return "VIREMENT"
     if stripe_invoice.get("collection_method") == "charge_automatically":
-        return "AUTRE"
+        return "CARTE"
     return "VIREMENT"
 
 

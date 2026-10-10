@@ -280,6 +280,37 @@ class FactPulseClient:
             return response.json()
         self._handle_error(response)
 
+    # ---- SuperPDP connection (client-level, OAuth Authorization Code) ----
+
+    def superpdp_connect_url(self, client_uid, mode_sandbox=True, return_url=None):
+        """POST /api/v1/clients/{uid}/superpdp/connect-url — SuperPDP authorize URL.
+
+        Once the end user has authorized, SuperPDP sends them back to
+        `return_url` with `superpdp_connected=true|false` appended.
+        """
+        if not self.is_configured:
+            raise FactPulseUnavailableError("FactPulse API is not configured.")
+
+        url = f"{self.base_url}/api/v1/clients/{client_uid}/superpdp/connect-url"
+        params = {"modeSandbox": "true" if mode_sandbox else "false"}
+        if return_url:
+            params["returnUrl"] = return_url
+        response = self._request("POST", url, client_uid=str(client_uid), params=params)
+        if response.status_code == 200:
+            return response.json()["authorizeUrl"]
+        self._handle_error(response)
+
+    def get_superpdp_status(self, client_uid):
+        """GET /api/v1/clients/{uid}/superpdp/status — {connected, modeSandbox, …}."""
+        if not self.is_configured:
+            raise FactPulseUnavailableError("FactPulse API is not configured.")
+
+        url = f"{self.base_url}/api/v1/clients/{client_uid}/superpdp/status"
+        response = self._request("GET", url, client_uid=str(client_uid))
+        if response.status_code == 200:
+            return response.json()
+        self._handle_error(response)
+
     # ---- Processing API methods ----
 
     def generate_invoice(self, invoice_data, source_pdf=None, client_uid=None):

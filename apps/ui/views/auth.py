@@ -23,6 +23,9 @@ def login_view(request):
     if request.method == "POST":
         if form.is_valid():
             login(request, form.get_user())
+            next_url = _safe_next(request)
+            if next_url:
+                return redirect(next_url)
             return redirect("ui:dashboard")
         else:
             # Check if the failure is due to unverified email.
@@ -76,7 +79,7 @@ def signup_view(request):
 
         try:
             user, org = create_account(email, password, org_name)
-            send_verification_email(user, request)
+            send_verification_email(user, request, next_url=_safe_next(request))
             return redirect("ui:verify_email_sent")
         except ValueError as e:
             return render(
@@ -88,7 +91,17 @@ def signup_view(request):
                 },
             )
 
-    return render(request, "ui/signup.html")
+    return render(request, "ui/signup.html", {"next_url": _safe_next(request)})
+
+
+def _safe_next(request):
+    """Local `next` URL from the query string or form, or ""."""
+    next_url = request.POST.get("next") or request.GET.get("next", "")
+    if next_url and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return next_url
+    return ""
 
 
 def verify_email_sent(request):
@@ -105,6 +118,12 @@ def verify_email_view(request, uidb64, token):
     if user is not None and email_verification_token.check_token(user, token):
         user.profile.email_verified = True
         user.profile.save(update_fields=["email_verified"])
+        # Signup started from a page to come back to (e.g. the Stripe App
+        # install): the single-use link proves the address, log in and resume.
+        next_url = _safe_next(request)
+        if next_url:
+            login(request, user, backend="apps.core.backends.EmailBackend")
+            return redirect(next_url)
         return render(request, "ui/verify_email_done.html")
 
     return render(request, "ui/verify_email_done.html", {"invalid": True})

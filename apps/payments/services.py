@@ -74,7 +74,9 @@ def get_adapter(provider_config: ProviderConfig) -> PaymentProviderAdapter:
 
     adapter_cls, opts = entry
     kwargs = {
-        "api_key": provider_config.api_key,
+        "api_key": stripe_api_key(provider_config)
+        if provider_config.provider == ProviderConfig.Provider.STRIPE
+        else provider_config.api_key,
         "webhook_secret": provider_config.webhook_secret,
     }
     for key, default in opts.get("config_keys", {}).items():
@@ -260,13 +262,32 @@ def _handle_payment_failed(event, provider):
         txn.save(update_fields=["status", "updated_at"])
 
 
-def import_stripe_invoice(organization, stripe_invoice, provider_config):
+def stripe_api_key(provider_config):
+    """Key for API calls on the merchant's Stripe account.
+
+    The key entered in the payment settings or, for an organization connected
+    through the Stripe App (optional private module), its OAuth access token.
+    """
+    if provider_config.api_key:
+        return provider_config.api_key
+
+    from django.apps import apps
+
+    if apps.is_installed("apps.connect"):
+        from apps.connect.services import access_token_for_organization
+
+        return access_token_for_organization(provider_config.organization)
+    return ""
+
+
+def import_stripe_invoice(organization, stripe_invoice, provider_config, notify=True):
     """Import a Stripe invoice as a draft FactPulse invoice.
 
     Used by both the webhook handler and the UI manual import. The invoice is
     left in 'draft' status (no number assigned) for manual review and
     validation — Stripe-imported invoices must not be auto-emitted.
     Returns (invoice, created) where created=False if already imported.
+    notify=False skips the "pending manual validation" e-mail (automatic mode).
     """
     from apps.billing.models import Invoice
 
@@ -300,7 +321,8 @@ def import_stripe_invoice(organization, stripe_invoice, provider_config):
         stripe_invoice_id,
     )
 
-    _notify_invoice_created(invoice, organization)
+    if notify:
+        _notify_invoice_created(invoice, organization)
 
     return invoice, True
 
@@ -359,7 +381,7 @@ def resync_stripe_invoice(invoice, provider_config, user=None):
 
     stripe_invoice = stripe.Invoice.retrieve(
         invoice.external_id,
-        api_key=provider_config.api_key,
+        api_key=stripe_api_key(provider_config),
         expand=["customer"],
     )
     payload = _build_stripe_invoice_payload(

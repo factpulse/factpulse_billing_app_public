@@ -1,3 +1,4 @@
+import importlib.util
 import logging
 import os
 from pathlib import Path
@@ -49,6 +50,9 @@ STRIPE_ENABLED = os.environ.get("STRIPE_ENABLED", "false").lower() in ("true", "
 
 if STRIPE_ENABLED:
     INSTALLED_APPS.append("apps.payments")
+    # Stripe App connector: private module, absent from the public repository
+    if importlib.util.find_spec("apps.connect"):
+        INSTALLED_APPS.append("apps.connect")
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",

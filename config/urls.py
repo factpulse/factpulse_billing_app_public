@@ -77,6 +77,10 @@ if apps.is_installed("apps.payments"):
         path("api/v1/payments/", include("apps.payments.urls")),
     )
 
+# Stripe App connector (private module, only present in the private repository)
+if apps.is_installed("apps.connect"):
+    urlpatterns.append(path("connect/", include("apps.connect.urls")))
+
 # UI routes with i18n prefix
 urlpatterns += i18n_patterns(
     path("admin/", admin.site.urls),

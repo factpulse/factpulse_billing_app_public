@@ -7,6 +7,7 @@
         <h1 class="login-title">FactPulse Billing</h1>
         {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
         <form method="post">
+            {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
             {% csrf_token %}
             <label for="id_org_name">Nom de l'organisation</label>
             <input type="text"
@@ -38,7 +39,7 @@
             <button type="submit" class="login-btn">Créer mon compte</button>
         </form>
         <p class="login-link">
-            Déjà un compte ? <a href="{% url 'ui:login' %}">Se connecter</a>
+            Déjà un compte ? <a href="{% url 'ui:login' %}{% if next_url %}?next={{ next_url|urlencode }}{% endif %}">Se connecter</a>
         </p>
     </div>
 {% endblock content_anonymous %}

@@ -1832,7 +1832,7 @@ class StripePaymentMeansTest(TestCase):
 
     def test_card_payment_method(self):
         settings = {"payment_method_types": ["card", "sepa_debit"]}
-        assert self._means(payment_settings=settings) == "AUTRE"
+        assert self._means(payment_settings=settings) == "CARTE"
 
     def test_sepa_debit(self):
         settings = {"payment_method_types": ["sepa_debit"]}
@@ -1848,7 +1848,7 @@ class StripePaymentMeansTest(TestCase):
             self._means(
                 payment_settings=settings, collection_method="charge_automatically"
             )
-            == "AUTRE"
+            == "CARTE"
         )
 
     def test_send_invoice_defaults_to_transfer(self):
@@ -1929,7 +1929,7 @@ class StripeImportRecipientTest(TestCase):
         assert invoice.version == version + 1
         assert data["invoiceLines"][0]["itemName"] == "Abonnement Pro"
         assert data["totals"]["totalNetAmount"] == "150.00"
-        assert data["references"]["paymentMeans"] == "AUTRE"
+        assert data["references"]["paymentMeans"] == "CARTE"
         assert data["recipient"]["name"] == "ACME SAS"
 
     @patch("stripe.Invoice.retrieve")

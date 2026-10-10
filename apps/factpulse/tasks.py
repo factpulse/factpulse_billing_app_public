@@ -16,6 +16,7 @@ from apps.billing.services.flow_detector import (
     is_ereporting_flow,
 )
 from apps.billing.services.state_machine import can_transition
+from apps.billing.signals import invoice_failed, invoice_validated
 from apps.core.models import Organization
 from apps.factpulse.client import (
     FactPulseError,
@@ -152,6 +153,8 @@ def generate_and_validate_invoice(invoice_uuid):
         if is_ereporting_flow(invoice.detected_flow):
             submit_ereporting_for_invoice.delay(str(invoice.uuid))
 
+        invoice_validated.send(sender=Invoice, invoice=invoice)
+
     except FactPulseError as e:
         _handle_factpulse_error(invoice, e, "validation_rejected")
 
@@ -253,6 +256,12 @@ def transmit_invoice(invoice_uuid):
             old_status=old_status,
             new_status=S.VALIDATED,
             details={"error": str(e), "error_type": "transmission_failed"},
+        )
+        invoice_failed.send(
+            sender=Invoice,
+            invoice=invoice,
+            error_type="transmission_failed",
+            message=str(e),
         )
 
 
@@ -539,6 +548,13 @@ CDAR_STATUS_MAP = {
 }
 
 
+# Final PA / buyer verdicts reported as invoice_failed
+CDAR_FAILURE_TYPES = {
+    S.REFUSED: "refused_by_buyer",
+    S.REJECTED: "rejected_by_pa",
+}
+
+
 def _process_cdar_lifecycle(org, data):
     """Process CDAR lifecycle events. Returns set of invoice numbers that got events."""
     invoices_with_cdar = set()
@@ -656,6 +672,19 @@ def _process_single_cdar_event(invoice, seller_id, invoice_id, event, existing_k
 
         _maybe_auto_mark_paid(invoice)
 
+        if new_status in CDAR_FAILURE_TYPES:
+            reason = " — ".join(
+                part
+                for part in (event.get("statusDescription"), event.get("reasonCode"))
+                if part
+            )
+            invoice_failed.send(
+                sender=Invoice,
+                invoice=invoice,
+                error_type=CDAR_FAILURE_TYPES[new_status],
+                message=reason or f"Statut {status_code}",
+            )
+
 
 def _maybe_auto_mark_paid(invoice):
     """Complete the "paid before emission" loop.
@@ -752,6 +781,15 @@ def _apply_flow_fallback(invoice, new_status, pdp_status, flow, error=None):
 
     if new_status == S.TRANSMITTED:
         _maybe_auto_mark_paid(invoice)
+
+    if error:
+        reasons = "; ".join(e["reason"] for e in error.get("errors", []) if e["reason"])
+        invoice_failed.send(
+            sender=Invoice,
+            invoice=invoice,
+            error_type=error["error_type"],
+            message=f"{error['message']} {reasons}".strip(),
+        )
 
 
 def _generate_source_pdf(invoice):
@@ -857,6 +895,10 @@ def _handle_factpulse_error(invoice, error, error_type):
         old_status=old_status,
         new_status=S.DRAFT,
         details={"error": str(error), "error_type": error_type},
+    )
+
+    invoice_failed.send(
+        sender=Invoice, invoice=invoice, error_type=error_type, message=str(error)
     )
 
     # Emit error webhook

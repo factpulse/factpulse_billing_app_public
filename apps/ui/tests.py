@@ -1813,3 +1813,81 @@ class TestBuildInvoicePayload:
         refs = payload["en16931_data"]["references"]
         assert refs["invoiceType"] == "380"
         assert refs["invoiceCurrency"] == "EUR"
+
+
+@pytest.mark.django_db
+class TestLoginNext:
+    def _login(self, next_url):
+        from django.contrib.auth.models import User
+        from django.test import Client
+
+        User.objects.create_user(
+            username="next@test.com",
+            email="next@test.com",
+            password="testpass123",  # nosec B106
+        )
+        return Client().post(
+            f"/login/?next={next_url}",
+            {"username": "next@test.com", "password": "testpass123"},
+        )
+
+    def test_redirects_to_local_next(self):
+        response = self._login("/connect/stripe/")
+
+        assert response.status_code == 302
+        assert response.url == "/connect/stripe/"
+
+    def test_ignores_external_next(self):
+        response = self._login("https://evil.example/")
+
+        assert response.status_code == 302
+        assert "evil.example" not in response.url
+
+
+@pytest.mark.django_db
+class TestSignupResumesAtNext:
+    def test_verification_link_logs_in_and_returns_to_next(self):
+        import re
+
+        from django.core import mail
+        from django.test import Client
+
+        client = Client()
+        client.post(
+            "/signup/?next=/connect/stripe/",
+            {
+                "email": "merchant@test.com",
+                "password": "testpass123",
+                "password_confirm": "testpass123",
+                "org_name": "Merchant",
+            },
+        )
+        link = re.search(r"https?://\S+", mail.outbox[0].body).group(0)
+        assert link.endswith("?next=%2Fconnect%2Fstripe%2F")
+
+        response = Client().get(link.split("testserver", 1)[1])
+
+        assert response.status_code == 302
+        assert response.url == "/connect/stripe/"
+        assert "_auth_user_id" in response.wsgi_request.session
+
+    def test_verification_without_next_keeps_confirmation_page(self):
+        import re
+
+        from django.core import mail
+        from django.test import Client
+
+        Client().post(
+            "/signup/",
+            {
+                "email": "plain@test.com",
+                "password": "testpass123",
+                "password_confirm": "testpass123",
+                "org_name": "Plain",
+            },
+        )
+        link = re.search(r"https?://\S+", mail.outbox[0].body).group(0)
+
+        response = Client().get(link.split("testserver", 1)[1])
+
+        assert response.status_code == 200

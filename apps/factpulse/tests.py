@@ -122,6 +122,35 @@ class TestClientApiMethods:
         assert result["isConfigured"] is True
 
     @patch("apps.factpulse.client.requests.request")
+    def test_superpdp_connect_url(self, mock_request):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"authorizeUrl": "https://superpdp/authorize"}
+        mock_request.return_value = mock_response
+
+        url = self.client.superpdp_connect_url(
+            "uid-1", mode_sandbox=False, return_url="https://app/back/"
+        )
+
+        assert url == "https://superpdp/authorize"
+        assert mock_request.call_args[0][0] == "POST"
+        assert "/clients/uid-1/superpdp/connect-url" in mock_request.call_args[0][1]
+        assert mock_request.call_args[1]["params"] == {
+            "modeSandbox": "false",
+            "returnUrl": "https://app/back/",
+        }
+
+    @patch("apps.factpulse.client.requests.request")
+    def test_get_superpdp_status(self, mock_request):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"connected": True}
+        mock_request.return_value = mock_response
+
+        assert self.client.get_superpdp_status("uid-1")["connected"] is True
+        assert "/clients/uid-1/superpdp/status" in mock_request.call_args[0][1]
+
+    @patch("apps.factpulse.client.requests.request")
     def test_generate_invoice_with_client_uid(self, mock_request):
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -674,6 +703,53 @@ class TestPollCdarEvents:
         invoice.refresh_from_db()
         assert invoice.status == "validated"  # Reverted
         assert invoice.factpulse_error["error_type"] == "pa_submission_failed"
+
+    @patch("apps.factpulse.tasks.client")
+    def test_refused_cdar_sends_invoice_failed(self, mock_client, org, supplier):
+        from apps.billing.factories import InvoiceFactory
+        from apps.billing.signals import invoice_failed
+        from apps.factpulse.tasks import poll_cdar_events
+
+        org.factpulse_client_uid = uuid_lib.uuid4()
+        org.save(update_fields=["factpulse_client_uid"])
+        InvoiceFactory(
+            organization=org,
+            supplier=supplier,
+            status="transmitted",
+            number="FA-2026-006",
+            pdp_transmission_id="flow-6",
+        )
+        mock_client.get_cdar_lifecycle.return_value = {
+            "invoices": [
+                {
+                    "sellerId": supplier.siren,
+                    "invoiceId": "FA-2026-006",
+                    "events": [
+                        {
+                            "statusCode": "210",
+                            "statusDescription": "Refusée",
+                            "reasonCode": "PRIX",
+                            "at": "2026-02-17T12:00:00Z",
+                        },
+                    ],
+                    "totalEvents": 1,
+                }
+            ],
+        }
+        received = []
+        invoice_failed.connect(
+            lambda sender, invoice, error_type, message, **kw: received.append(
+                (error_type, message)
+            ),
+            weak=False,
+            dispatch_uid="test_cdar_failed",
+        )
+        try:
+            poll_cdar_events()
+        finally:
+            invoice_failed.disconnect(dispatch_uid="test_cdar_failed")
+
+        assert received == [("refused_by_buyer", "Refusée — PRIX")]
 
     @patch("apps.factpulse.tasks.client")
     def test_refused_status_from_cdar_210(self, mock_client, org, supplier):
@@ -1699,6 +1775,57 @@ class TestGenerateAndValidateInvoice:
             invoice=invoice, action="status_change", new_status="validated"
         )
         assert log.exists()
+
+    @patch("apps.webhooks.services.emit_webhook")
+    @patch("apps.billing.services.invoice_service.check_auto_cancel")
+    @patch("apps.factpulse.tasks.client")
+    @patch("apps.factpulse.tasks._generate_source_pdf", return_value=b"source-pdf")
+    def test_success_sends_invoice_validated(
+        self, mock_gen_pdf, mock_client, mock_auto_cancel, mock_webhook, org, supplier
+    ):
+        from apps.billing.signals import invoice_validated
+        from apps.factpulse.tasks import generate_and_validate_invoice
+
+        org.factpulse_client_uid = uuid_lib.uuid4()
+        org.save(update_fields=["factpulse_client_uid"])
+        invoice = self._make_processing_invoice(org, supplier)
+        mock_client.generate_invoice.return_value = b"facturx-pdf-bytes"
+        received = []
+        invoice_validated.connect(
+            lambda sender, invoice, **kw: received.append(invoice.uuid),
+            weak=False,
+            dispatch_uid="test_validated",
+        )
+        try:
+            generate_and_validate_invoice(str(invoice.uuid))
+        finally:
+            invoice_validated.disconnect(dispatch_uid="test_validated")
+
+        assert received == [invoice.uuid]
+
+    @patch("apps.webhooks.services.emit_webhook")
+    @patch("apps.factpulse.tasks._generate_source_pdf", return_value=b"source-pdf")
+    def test_error_sends_invoice_failed(
+        self, mock_gen_pdf, mock_webhook, org, supplier
+    ):
+        from apps.billing.signals import invoice_failed
+        from apps.factpulse.tasks import generate_and_validate_invoice
+
+        invoice = self._make_processing_invoice(org, supplier)  # no client uid
+        received = []
+        invoice_failed.connect(
+            lambda sender, invoice, error_type, message, **kw: received.append(
+                error_type
+            ),
+            weak=False,
+            dispatch_uid="test_failed",
+        )
+        try:
+            generate_and_validate_invoice(str(invoice.uuid))
+        finally:
+            invoice_failed.disconnect(dispatch_uid="test_failed")
+
+        assert received == ["not_provisioned"]
 
     @patch("apps.factpulse.tasks._generate_source_pdf", return_value=b"source-pdf")
     def test_invoice_not_found(self, mock_gen_pdf):

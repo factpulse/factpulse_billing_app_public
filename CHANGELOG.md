@@ -5,6 +5,21 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.2.0] — 2026-10-10
+
+### Ajouté
+
+- **Paiement par carte** : moyen de paiement `CARTE` (code UNTDID 4461 n° 48), déduit des factures Stripe payées par carte
+- **Franchise en base sans numéro de TVA** : le SIREN est transmis comme identifiant fiscal du vendeur (BT-32), accepté par BR-E-02
+- **Signaux** `invoice_validated` et `invoice_failed` (génération, transmission, refus client et rejet PA) pour les modules complémentaires
+- **SuperPDP** : `superpdp_connect_url()` et `get_superpdp_status()` dans le client FactPulse
+- **Inscription** : paramètre `?next=` conservé jusqu'au lien de vérification, qui connecte l'utilisateur et le ramène sur la page d'origine
+
+### Modifié
+
+- L'IBAN n'est plus exigé que pour les factures payées par virement (BR-50/BR-61)
+- CI : smoke test sans MinIO
+
 ## [1.1.0] — 2026-10-10
 
 ### Ajouté

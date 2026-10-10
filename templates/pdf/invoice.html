@@ -275,7 +275,8 @@
                 <td class="label" style="padding-left: 30px;">Moyen de paiement :</td>
                 <td>
                     {% if references.paymentMeans == "VIREMENT" %}Virement
-                    {% elif references.paymentMeans == "AUTRE" %}Carte bancaire
+                    {% elif references.paymentMeans == "CARTE" %}Carte bancaire
+                    {% elif references.paymentMeans == "AUTRE" %}Autre
                     {% elif references.paymentMeans == "PRELEVEMENT" %}Prélèvement
                     {% else %}{{ references.paymentMeans|default:"—" }}
                     {% endif %}

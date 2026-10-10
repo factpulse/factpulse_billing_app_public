@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _require_owner_and_stripe(request):
-    """Return (org, provider_config) or redirect response on failure."""
+    """Return (org, provider_config, None) or (None, None, redirect) on failure."""
     org = request.organization
     if not org:
         return None, None, redirect("ui:dashboard")
@@ -24,15 +24,16 @@ def _require_owner_and_stripe(request):
         return None, None, redirect("ui:dashboard")
 
     from apps.payments.models import ProviderConfig
+    from apps.payments.services import stripe_api_key
 
-    config = (
-        ProviderConfig.objects.filter(
-            organization=org, provider="stripe", is_active=True
-        )
-        .exclude(api_key="")
-        .first()
-    )
-    if not config:
+    config = ProviderConfig.objects.filter(
+        organization=org, provider="stripe", is_active=True
+    ).first()
+    if config:
+        # Key entered in the settings, or the Stripe App OAuth token (not a
+        # model field: never saved)
+        config.stripe_key = stripe_api_key(config)
+    if not config or not config.stripe_key:
         messages.error(request, "Stripe n'est pas configuré pour cette organisation.")
         return None, None, redirect("ui:payment_settings")
 
@@ -56,7 +57,7 @@ def stripe_customers(request):
             try:
                 import stripe as stripe_sdk
 
-                sc = stripe_sdk.Customer.retrieve(stripe_id, api_key=config.api_key)
+                sc = stripe_sdk.Customer.retrieve(stripe_id, api_key=config.stripe_key)
                 _, created = import_customer(org, sc)
                 if created:
                     messages.success(
@@ -72,7 +73,7 @@ def stripe_customers(request):
 
         elif action == "import_all":
             try:
-                stripe_customers_list = list_customers(config.api_key)
+                stripe_customers_list = list_customers(config.stripe_key)
                 created_count = updated_count = 0
                 for sc in stripe_customers_list:
                     _, created = import_customer(org, sc)
@@ -93,7 +94,7 @@ def stripe_customers(request):
     stripe_list = []
     api_error = None
     try:
-        raw = list_customers(config.api_key)
+        raw = list_customers(config.stripe_key)
         stripe_ids = [sc["id"] for sc in raw]
         mapped = {
             c.external_id: str(c.uuid)
@@ -144,7 +145,7 @@ def stripe_products(request):
 
                 sp = stripe_sdk.Product.retrieve(
                     stripe_id,
-                    api_key=config.api_key,
+                    api_key=config.stripe_key,
                     expand=["default_price"],
                 )
                 _, created = import_product(org, sp)
@@ -162,7 +163,7 @@ def stripe_products(request):
 
         elif action == "import_all":
             try:
-                stripe_products_list = list_products(config.api_key)
+                stripe_products_list = list_products(config.stripe_key)
                 created_count = updated_count = 0
                 for sp in stripe_products_list:
                     _, created = import_product(org, sp)
@@ -182,7 +183,7 @@ def stripe_products(request):
     stripe_list = []
     api_error = None
     try:
-        raw = list_products(config.api_key)
+        raw = list_products(config.stripe_key)
         stripe_ids = [sp["id"] for sp in raw]
         mapped = {
             p.external_id: str(p.uuid)
@@ -241,7 +242,7 @@ def stripe_invoices(request):
 
                     si = stripe_sdk.Invoice.retrieve(
                         stripe_invoice_id,
-                        api_key=config.api_key,
+                        api_key=config.stripe_key,
                         expand=["customer"],
                     )
                     invoice, created = import_stripe_invoice(org, dict(si), config)
@@ -265,7 +266,7 @@ def stripe_invoices(request):
     api_error = None
 
     try:
-        raw, has_more = list_invoices(config.api_key, starting_after=cursor)
+        raw, has_more = list_invoices(config.stripe_key, starting_after=cursor)
         stripe_ids = [si["id"] for si in raw]
         imported = {
             inv.external_id: str(inv.uuid)

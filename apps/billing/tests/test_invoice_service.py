@@ -259,6 +259,49 @@ class TestValidateInvoice:
         with pytest.raises(ConflictError):
             invoice_service.validate_invoice(invoice)
 
+    def test_transfer_without_iban_raises(self, org, supplier):
+        supplier.iban = ""
+        supplier.save()
+        NumberingSequenceFactory(supplier=supplier)
+        invoice = InvoiceFactory(supplier=supplier, organization=org)
+        invoice.en16931_data.setdefault("references", {})["paymentMeans"] = "VIREMENT"
+
+        with pytest.raises(ValueError, match="IBAN"):
+            invoice_service.validate_invoice(invoice)
+
+    @patch("apps.factpulse.tasks.generate_and_validate_invoice.delay")
+    def test_card_payment_without_iban_validates(self, mock_delay, org, supplier):
+        supplier.iban = ""
+        supplier.save()
+        NumberingSequenceFactory(supplier=supplier)
+        invoice = InvoiceFactory(supplier=supplier, organization=org)
+        invoice.en16931_data.setdefault("references", {})["paymentMeans"] = "CARTE"
+
+        result = invoice_service.validate_invoice(invoice)
+
+        assert result.status == "processing"
+
+    @patch("apps.factpulse.tasks.generate_and_validate_invoice.delay")
+    def test_franchise_without_vat_number_uses_siren_as_bt32(
+        self, mock_delay, org, supplier
+    ):
+        from apps.billing.services.resolution_service import _supplier_to_en16931
+
+        supplier.vat_regime = "franchise"
+        supplier.default_vat_exemption_code = "VATEX-FR-FRANCHISE"
+        supplier.vat_number = ""
+        supplier.siren = "123456789"
+        supplier.save()
+        NumberingSequenceFactory(supplier=supplier)
+        invoice = InvoiceFactory(supplier=supplier, organization=org)
+
+        result = invoice_service.validate_invoice(invoice)
+
+        assert result.status == "processing"
+        data = _supplier_to_en16931(supplier)
+        assert data["taxRegistrationId"] == "123456789"
+        assert "vatNumber" not in data
+
     def test_default_exemption_without_vat_number_raises(self, org, supplier):
         supplier.default_vat_exemption_reason = "TVA non applicable, art. 293 B du CGI"
         supplier.vat_number = ""

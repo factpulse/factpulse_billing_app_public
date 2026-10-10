@@ -128,7 +128,7 @@ jobs:
 
       - name: Start services (dev mode — web only, no celery)
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build db redis minio minio-setup billing-web
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build db redis billing-web
           echo "Waiting for database..."
           timeout 30 bash -c 'until docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T db pg_isready -U factpulse; do sleep 2; done'
           echo "Running migrations..."
