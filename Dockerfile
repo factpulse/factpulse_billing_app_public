@@ -8,6 +8,7 @@ ENV DJANGO_SETTINGS_MODULE=config.settings.prod
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
+    libharfbuzz-subset0 \
     libgdk-pixbuf-2.0-0 \
     libffi-dev \
     libcairo2 \

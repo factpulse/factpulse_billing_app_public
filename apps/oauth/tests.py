@@ -242,3 +242,94 @@ class TestTokenRevocation:
             {"token": "nonexistent_token", "client_id": app.client_id},
         )
         assert resp.status_code == 200
+
+
+# ── Full authorization code flow (PKCE S256) ─────────────────────────
+
+
+@pytest.mark.django_db
+class TestAuthorizationCodeFlow:
+    """End to end: consent, code + PKCE exchange, refresh, wrong verifier."""
+
+    REDIRECT = "http://localhost:3000/callback"
+    VERIFIER = "dBjftJeZ4CVP-mJ92K27uhbUJU1p1r_wW1gFWFOEjXk" * 2
+
+    def _challenge(self, verifier):
+        import base64
+        import hashlib
+
+        digest = hashlib.sha256(verifier.encode()).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+    def _authorize(self, client):
+        from urllib.parse import parse_qs, urlsplit
+
+        org = Organization.objects.create(name="Flow Org", slug="flow-org")
+        user = User.objects.create_user(
+            username="flow@test.local",
+            password="testpass123",  # nosec B106
+        )
+        OrganizationMembership.objects.create(user=user, organization=org, role="owner")
+        app = Application.objects.create(
+            name="flow-app",
+            client_type=Application.CLIENT_PUBLIC,
+            authorization_grant_type=Application.GRANT_AUTHORIZATION_CODE,
+            redirect_uris=self.REDIRECT,
+        )
+        client.force_login(user)
+        params = {
+            "response_type": "code",
+            "client_id": app.client_id,
+            "redirect_uri": self.REDIRECT,
+            "code_challenge": self._challenge(self.VERIFIER),
+            "code_challenge_method": "S256",
+            "scope": "mcp",
+            "state": "xyz",
+        }
+        assert client.get("/oauth/authorize/", params).status_code == 200
+        resp = client.post("/oauth/authorize/", {**params, "allow": "true"})
+        redirect_uri = resp.context["redirect_uri"]
+        query = parse_qs(urlsplit(redirect_uri).query)
+        assert query["state"] == ["xyz"]
+        return app, query["code"][0]
+
+    def _token(self, client, **data):
+        return client.post("/oauth/token/", data)
+
+    def test_code_exchange_and_refresh(self, client):
+        app, code = self._authorize(client)
+
+        resp = self._token(
+            client,
+            grant_type="authorization_code",
+            code=code,
+            redirect_uri=self.REDIRECT,
+            client_id=app.client_id,
+            code_verifier=self.VERIFIER,
+        )
+        assert resp.status_code == 200, resp.content
+        tokens = resp.json()
+        assert tokens["access_token"] and tokens["refresh_token"]
+
+        resp = self._token(
+            client,
+            grant_type="refresh_token",
+            refresh_token=tokens["refresh_token"],
+            client_id=app.client_id,
+        )
+        assert resp.status_code == 200, resp.content
+        assert resp.json()["access_token"] != tokens["access_token"]
+
+    def test_wrong_code_verifier_is_rejected(self, client):
+        app, code = self._authorize(client)
+
+        resp = self._token(
+            client,
+            grant_type="authorization_code",
+            code=code,
+            redirect_uri=self.REDIRECT,
+            client_id=app.client_id,
+            code_verifier="x" * 64,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["error"] == "invalid_grant"

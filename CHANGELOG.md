@@ -5,6 +5,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.3.2] — 2026-10-12
+
+### Modifié
+
+- Dépendances : correctifs de sécurité (Django 5.2.18, cryptography 50, PyJWT 2.15, Pillow 12.3, WeasyPrint 70, oauthlib 4, starlette, urllib3, requests…), aucune vulnérabilité connue restante
+- Image Docker : HarfBuzz-Subset installé (bientôt requis par WeasyPrint)
+
 ## [1.3.1] — 2026-10-12
 
 ### Modifié
