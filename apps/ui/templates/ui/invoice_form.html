@@ -317,7 +317,7 @@
         </div>
         <!-- Preview Panel -->
         <div class="preview-panel">
-            <h3>Aperçu</h3>
+            <h3>Aperçu en direct</h3>
             <div class="mb-1">
                 <div class="preview-total-label">Total TTC</div>
                 <div class="preview-total-value" x-text="totalGrossDisplay"></div>
@@ -464,11 +464,11 @@ document.addEventListener('alpine:init', function() {
             },
 
             get totalGrossDisplay() {
-                return this.totals.totalGrossAmount + '\u00a0\u20ac';
+                return InvoiceCalculator.formatAmount(this.totals.totalGrossAmount);
             },
 
             get totalNetDisplay() {
-                return this.totals.totalNetAmount + '\u00a0\u20ac';
+                return InvoiceCalculator.formatAmount(this.totals.totalNetAmount);
             },
 
             get vatLinesJson() {
@@ -493,7 +493,7 @@ document.addEventListener('alpine:init', function() {
                     line._f_exemption = prefix + 'exemption_reason';
                     line._netAmount = InvoiceCalculator.lineNetAmount(line.quantity, line.unitNetPrice);
                     line._displayName = line.itemName || '(sans nom)';
-                    line._netDisplay = line._netAmount + '\u00a0\u20ac';
+                    line._netDisplay = InvoiceCalculator.formatAmount(line._netAmount);
                     line._isZeroVat = parseFloat(line.manualVatRate) === 0;
                 }
             },
@@ -501,8 +501,8 @@ document.addEventListener('alpine:init', function() {
             _updateVatLineFields() {
                 for (var i = 0; i < this.vatLines.length; i++) {
                     var vl = this.vatLines[i];
-                    vl._label = 'TVA ' + vl.manualRate + '\u00a0%';
-                    vl._amountDisplay = vl.vatAmount + '\u00a0\u20ac';
+                    vl._label = 'TVA ' + InvoiceCalculator.formatRate(vl.manualRate);
+                    vl._amountDisplay = InvoiceCalculator.formatAmount(vl.vatAmount);
                 }
             },
 

@@ -236,6 +236,7 @@ def _handle_payment_confirmed(event, provider):
             today = date.today()
             invoice_service.mark_paid(
                 invoice,
+                source="online_payment",
                 payment_data={
                     "payment_date": today.isoformat(),
                     "payment_reference": f"{provider}:{txn.provider_payment_id}",
@@ -551,6 +552,7 @@ def _handle_invoice_paid(event, provider):
         today = date.today()
         invoice_service.mark_paid(
             invoice,
+            source="online_payment",
             payment_data={
                 "payment_date": today.isoformat(),
                 "payment_reference": f"{provider}:{stripe_invoice_id}",

@@ -1,9 +1,16 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}
     Autorisation accordée — FactPulse
 {% endblock title %}
 {% block content_anonymous %}
     <div class="login-container">
+        <div class="auth-brand">
+            <img src="{% static 'images/logo/logo.png' %}"
+                 alt="FactPulse"
+                 width="712"
+                 height="512">
+        </div>
         <h1 class="login-title">Autorisation accordée</h1>
         <div class="section-box">
             <p>

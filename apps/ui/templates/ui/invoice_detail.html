@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load ui_format %}
 {% block title %}
     {{ invoice.number|default:"Brouillon" }} — FactPulse Billing
 {% endblock title %}
@@ -10,12 +11,18 @@
 {% block content %}
     <div class="topbar">
         <h1>
-            {% if invoice.invoice_type_code == "381" %}
-                Avoir
+            {% if invoice.number %}
+                {% if invoice.invoice_type_code == "381" %}
+                    Avoir
+                {% else %}
+                    Facture
+                {% endif %}
+                {{ invoice.number }}
+            {% elif invoice.invoice_type_code == "381" %}
+                Brouillon d'avoir
             {% else %}
-                Facture
+                Brouillon de facture
             {% endif %}
-            {{ invoice.number|default:"Brouillon" }}
         </h1>
         <div class="topbar-actions">
             {% if invoice.status == "draft" %}
@@ -164,7 +171,7 @@
                     {% endif %}
                     {% if data.supplier.vatNumber %}
                         <br>
-                        TVA: {{ data.supplier.vatNumber }}
+                        TVA&nbsp;: {{ data.supplier.vatNumber }}
                     {% endif %}
                 </div>
                 <div class="bg-elevated">
@@ -178,7 +185,7 @@
                     {% endif %}
                     {% if data.recipient.vatNumber %}
                         <br>
-                        TVA: {{ data.recipient.vatNumber }}
+                        TVA&nbsp;: {{ data.recipient.vatNumber }}
                     {% endif %}
                 </div>
             </div>
@@ -208,26 +215,26 @@
                 </div>
             </div>
             <!-- Lines -->
-            <table>
+            <table class="table-card">
                 <thead>
                     <tr>
                         <th>#</th>
                         <th>Désignation</th>
-                        <th class="text-right">Qté</th>
-                        <th class="text-right">Prix unit. HT</th>
-                        <th class="text-right">TVA</th>
-                        <th class="text-right">Montant HT</th>
+                        <th class="num">Qté</th>
+                        <th class="num">Prix unit. HT</th>
+                        <th class="num">TVA</th>
+                        <th class="num">Montant HT</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for line in data.invoiceLines %}
                         <tr>
                             <td>{{ line.lineNumber|default:forloop.counter }}</td>
-                            <td>{{ line.itemName }}</td>
-                            <td class="text-right">{{ line.quantity }}</td>
-                            <td class="text-right">{{ line.unitNetPrice|floatformat:2 }}&nbsp;€</td>
-                            <td class="text-right">{{ line.manualVatRate|default:"20.00"|floatformat:2 }}&nbsp;%</td>
-                            <td class="text-right">{{ line.lineNetAmount|default:"—"|floatformat:2 }}&nbsp;€</td>
+                            <td class="cell-strong">{{ line.itemName }}</td>
+                            <td class="num">{{ line.quantity }}</td>
+                            <td class="num">{{ line.unitNetPrice|eur }}</td>
+                            <td class="num">{{ line.manualVatRate|default:"20.00"|percent }}</td>
+                            <td class="num">{{ line.lineNetAmount|eur }}</td>
                         </tr>
                     {% endfor %}
                 </tbody>
@@ -237,15 +244,15 @@
                 <table class="detail-totals-table">
                     <tr>
                         <td>Total HT</td>
-                        <td class="text-right totals-value">{{ data.totals.totalNetAmount|default:"—" }}&nbsp;€</td>
+                        <td class="text-right totals-value">{{ data.totals.totalNetAmount|eur }}</td>
                     </tr>
                     <tr>
                         <td>Total TVA</td>
-                        <td class="text-right totals-value">{{ data.totals.vatAmount|default:"—" }}&nbsp;€</td>
+                        <td class="text-right totals-value">{{ data.totals.vatAmount|eur }}</td>
                     </tr>
                     <tr class="totals-row-final">
                         <td>Total TTC</td>
-                        <td class="totals-value-primary">{{ data.totals.totalGrossAmount|default:"—" }}&nbsp;€</td>
+                        <td class="totals-value-primary">{{ data.totals.totalGrossAmount|eur }}</td>
                     </tr>
                 </table>
             </div>
@@ -272,48 +279,47 @@
                 <div class="bg-success detail-paid">
                     Payée le {{ invoice.payment_date|date:"d/m/Y" }}
                     {% if invoice.payment_reference %}— Réf: {{ invoice.payment_reference }}{% endif %}
-                    {% if invoice.payment_amount %}— {{ invoice.payment_amount|floatformat:2 }}&nbsp;€{% endif %}
+                    {% if invoice.payment_amount %}— {{ invoice.payment_amount|eur }}{% endif %}
                 </div>
             {% endif %}
         </div>
         <!-- Sidebar: Timeline -->
         <div>
+            {% if lifecycle %}
+                <h3>Cycle de vie</h3>
+                <ol class="lifecycle" aria-label="Cycle de vie de la facture">
+                    {% for step in lifecycle %}
+                        <li class="lifecycle-step lifecycle-{{ step.state }}"
+                            title="Statut {{ step.code }}{% if step.state == 'pending' %} — en attente{% endif %}">
+                            {{ step.label }}
+                        </li>
+                    {% endfor %}
+                </ol>
+            {% endif %}
             <h3>Historique</h3>
             <div class="timeline">
-                {% for log in audit_logs %}
-                    <div class="timeline-item">
-                        <div>
-                            <strong>
-                                {% if log.action == "cdar_event" %}
-                                    CDAR {{ log.details.status_code }}
-                                {% elif log.action == "cdar_paid_submitted" %}
-                                    CDAR Encaissée soumise
-                                {% elif log.action == "cdar_paid_error" %}
-                                    CDAR Erreur soumission
-                                {% elif log.action == "cdar_paid_skipped" %}
-                                    CDAR Ignorée
-                                {% elif log.action == "ereporting_submitted" %}
-                                    E-reporting soumis (flux {{ log.details.flux_type }})
-                                {% elif log.action == "ereporting_error" %}
-                                    Erreur e-reporting
-                                {% elif log.action == "status_change" %}
-                                    {{ log.old_status }} → {{ log.new_status }}
-                                {% elif log.action == "flow_submitted" %}
-                                    Flux soumis à la PA
-                                {% elif log.action == "created" %}
-                                    Création
-                                {% elif log.action == "data_update" %}
-                                    Modification
-                                {% elif log.action == "delete" %}
-                                    Suppression
-                                {% else %}
-                                    {{ log.action }}
-                                {% endif %}
-                            </strong>
-                        </div>
-                        {% if log.action == "cdar_event" %}<div>{{ log.details.status_description }}</div>{% endif %}
-                        <div class="time">{{ log.timestamp|date:"d/m/Y H:i" }}</div>
-                    </div>
+                {% for entry in audit_logs %}
+                    <details class="timeline-item{% if entry.tone %} timeline-{{ entry.tone }}{% endif %}">
+                        <summary>
+                            <strong>{{ entry.title }}</strong>
+                            {% if entry.subtitle %}<span class="timeline-subtitle">{{ entry.subtitle }}</span>{% endif %}
+                            <span class="time">{{ entry.timestamp|date:"d/m/Y H:i" }}</span>
+                        </summary>
+                        {% if entry.rows %}
+                            <dl class="timeline-details">
+                                {% for label, value, is_code in entry.rows %}
+                                    <dt>{{ label }}</dt>
+                                    <dd>
+                                        {% if is_code %}
+                                            <code>{{ value }}</code>
+                                        {% else %}
+                                            {{ value }}
+                                        {% endif %}
+                                    </dd>
+                                {% endfor %}
+                            </dl>
+                        {% endif %}
+                    </details>
                 {% empty %}
                     <div class="text-muted">Aucun historique</div>
                 {% endfor %}

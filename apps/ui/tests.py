@@ -57,6 +57,48 @@ class TestPdpSettingsView:
         assert response.status_code == 200
         assert b"Configuration plateforme agr" in response.content
 
+    def _mock_client(self, mock_client, superpdp=None, pdp=None):
+        mock_client.is_configured = True
+        mock_client.get_pdp_config.return_value = pdp or {}
+        mock_client.get_superpdp_status.return_value = superpdp or {"connected": False}
+
+    def test_superpdp_connect_redirects_with_sandbox_and_return_url(self):
+        self.client.login(username="pdp-owner@test.com", password="testpass123")
+        with patch("apps.factpulse.client.client") as mock_client:
+            self._mock_client(mock_client)
+            mock_client.superpdp_connect_url.return_value = "https://superpdp/authorize"
+
+            response = self.client.post(
+                "/settings/pdp/", {"action": "superpdp_connect", "mode_sandbox": "on"}
+            )
+
+        assert response.url == "https://superpdp/authorize"
+        kwargs = mock_client.superpdp_connect_url.call_args.kwargs
+        assert kwargs["mode_sandbox"] is True
+        assert kwargs["return_url"] == "http://testserver/settings/pdp/"
+
+    def test_superpdp_disconnect(self):
+        self.client.login(username="pdp-owner@test.com", password="testpass123")
+        with patch("apps.factpulse.client.client") as mock_client:
+            self._mock_client(mock_client, superpdp={"connected": True})
+
+            self.client.post("/settings/pdp/", {"action": "superpdp_disconnect"})
+
+        mock_client.disconnect_superpdp.assert_called_once_with(
+            str(self.org.factpulse_client_uid)
+        )
+
+    def test_shows_superpdp_status(self):
+        self.client.login(username="pdp-owner@test.com", password="testpass123")
+        with patch("apps.factpulse.client.client") as mock_client:
+            self._mock_client(
+                mock_client, superpdp={"connected": True, "modeSandbox": True}
+            )
+            response = self.client.get("/settings/pdp/")
+        content = response.content.decode()
+        assert "Déconnecter SuperPDP" in content
+        assert "bac à sable" in content
+
     def test_member_forbidden(self):
         member = User.objects.create_user(
             username="pdp-member@test.com",
@@ -514,6 +556,21 @@ class TestInvoiceList:
         assert all(
             inv.status in ("validated", "transmitted", "accepted") for inv in invoices
         )
+
+    def test_sent_meta_filter(self):
+        paid = InvoiceFactory(
+            organization=self.org,
+            supplier=self.supplier,
+            status="paid",
+            pdp_transmission_id="flow-1",
+        )
+        InvoiceFactory(organization=self.org, supplier=self.supplier, status="paid")
+        InvoiceFactory(
+            organization=self.org, supplier=self.supplier, status="validated"
+        )
+        response = self.client.get("/invoices/?status=sent")
+        assert response.status_code == 200
+        assert list(response.context["invoices"]) == [paid]
 
 
 # ---------------------------------------------------------------------------
@@ -1891,3 +1948,330 @@ class TestSignupResumesAtNext:
         response = Client().get(link.split("testserver", 1)[1])
 
         assert response.status_code == 200
+
+
+# --- Formatting filters ---
+
+
+class TestUiFormatFilters:
+    def test_eur_groups_thousands_french_style(self):
+        from apps.ui.templatetags.ui_format import eur
+
+        assert eur("220052.7") == "220 052,70 €"
+        assert eur(0) == "0,00 €"
+        assert eur("-1234.5") == "-1 234,50 €"
+
+    def test_eur_empty_or_invalid_gives_dash(self):
+        from apps.ui.templatetags.ui_format import eur
+
+        assert eur(None) == "—"
+        assert eur("") == "—"
+        assert eur("abc") == "—"
+
+    def test_percent_drops_useless_decimals(self):
+        from apps.ui.templatetags.ui_format import percent
+
+        assert percent("20.00") == "20 %"
+        assert percent("5.50") == "5,5 %"
+        assert percent(None) == "—"
+
+    def test_isodatetime(self):
+        from apps.ui.templatetags.ui_format import isodatetime
+
+        assert isodatetime("2026-03-12T13:10:02+00:00").startswith("12/03/2026 à ")
+        assert isodatetime(None) == "—"
+        assert isodatetime("not a date") == "not a date"
+
+    def test_initials(self):
+        from apps.ui.templatetags.ui_format import initials
+
+        assert initials(User(email="jane.doe@example.com", username="u")) == "JD"
+        assert (
+            initials(User(first_name="Ada", last_name="Lovelace", username="u")) == "AL"
+        )
+
+
+@pytest.mark.django_db
+class TestDashboardRendering:
+    def test_dashboard_formats_amounts(self):
+        org = Organization.objects.create(name="Fmt Org", slug="fmt-org")
+        user = User.objects.create_user(
+            "fmt@example.com", "fmt@example.com", "pw-123456"
+        )
+        OrganizationMembership.objects.create(user=user, organization=org, role="owner")
+        invoice = InvoiceFactory(organization=org)
+        # total_incl_tax is recomputed on save() from en16931_data: set it directly
+        type(invoice).objects.filter(pk=invoice.pk).update(total_incl_tax="12345.60")
+        client = Client()
+        client.force_login(user)
+
+        response = client.get("/")
+
+        assert response.status_code == 200
+        assert "12 345,60 €" in response.content.decode()
+
+
+# --- Invoice history (timeline) ---
+
+
+@pytest.mark.django_db
+class TestInvoiceTimeline:
+    def _log(self, invoice, **kwargs):
+        from apps.billing.models import InvoiceAuditLog
+
+        return InvoiceAuditLog.objects.create(invoice=invoice, **kwargs)
+
+    def test_cdar_paid_error_shows_the_error_message(self):
+        from apps.ui.timeline import build_entry
+
+        invoice = InvoiceFactory()
+        log = self._log(
+            invoice,
+            action="cdar_paid_error",
+            details={"error": "API error 422: BR-FR-CDV-14"},
+        )
+
+        entry = build_entry(log)
+
+        assert entry.tone == "error"
+        assert "212" in entry.title
+        assert ("Erreur", "API error 422: BR-FR-CDV-14", True) in entry.rows
+
+    def test_cdar_event_details(self):
+        from apps.ui.timeline import build_entry
+
+        log = self._log(
+            InvoiceFactory(),
+            action="cdar_event",
+            details={
+                "status_code": "201",
+                "status_description": "Émise par la plateforme",
+                "at": "2026-09-22T16:40:02+00:00",
+                "issuer_siren": "900000001",
+                "issuer_role": "WK",
+            },
+        )
+
+        entry = build_entry(log)
+        labels = {label: value for label, value, _ in entry.rows}
+
+        assert entry.title == "Statut 201 reçu"
+        assert labels["Statut CDAR"] == "201 — Émise par la plateforme"
+        assert labels["Date du statut"].startswith("22/09/2026 à ")
+        assert labels["Émis par"] == "900000001 (Plateforme agréée)"
+
+    def test_status_change_uses_french_labels_and_origin(self):
+        from apps.ui.timeline import build_entry
+
+        log = self._log(
+            InvoiceFactory(),
+            action="status_change",
+            old_status="transmitted",
+            new_status="paid",
+            details={"source": "prepaid_auto", "payment_reference": "stripe:in_123"},
+        )
+
+        entry = build_entry(log)
+        labels = {label: value for label, value, _ in entry.rows}
+
+        assert entry.title == "Transmise → Payée"
+        assert labels["Origine"].startswith("Paiement reçu avant l'émission")
+        assert labels["Référence de paiement"] == "stripe:in_123"
+
+    def test_unknown_action_falls_back_without_error(self):
+        from apps.ui.timeline import build_entry
+
+        log = self._log(InvoiceFactory(), action="delete", details={"foo_bar": "x"})
+
+        entry = build_entry(log)
+
+        assert ("Foo bar", "x", False) in entry.rows
+
+    def _received_at(self, log, when):
+        from apps.billing.models import InvoiceAuditLog
+
+        InvoiceAuditLog.objects.filter(pk=log.pk).update(timestamp=when)
+        log.refresh_from_db()
+        return log
+
+    def test_cdar_status_date_without_time_zone(self):
+        """Naive dates: UTC by default, French local time if UTC would be in the future."""
+        from datetime import UTC, datetime
+
+        from apps.ui.timeline import build_entry
+
+        received = datetime(2026, 10, 11, 19, 18, 46, tzinfo=UTC)  # 21:18 Paris
+        invoice = InvoiceFactory()
+        utc = self._received_at(
+            self._log(
+                invoice,
+                action="cdar_event",
+                details={
+                    "status_code": "202",
+                    "at": "2026-10-11T19:10:00",
+                    "amount": "29",
+                },
+            ),
+            received,
+        )
+        local = self._received_at(
+            self._log(
+                invoice,
+                action="cdar_event",
+                details={"status_code": "200", "at": "2026-10-11T21:10:00"},
+            ),
+            received,
+        )
+
+        for log in (utc, local):
+            labels = {label: value for label, value, _ in build_entry(log).rows}
+            assert labels["Date du statut"] == "11/10/2026 à 21:10"
+        assert [label for label, _, _ in build_entry(utc).rows].count("Montant") == 1
+
+    def test_same_poll_events_in_lifecycle_order(self):
+        from datetime import UTC, datetime, timedelta
+
+        from apps.ui.timeline import build_timeline
+
+        invoice = InvoiceFactory()
+        base = datetime(2026, 10, 11, 19, 18, 46, tzinfo=UTC)
+        for i, code in enumerate(["211", "203", "200", "202", "201"]):
+            self._received_at(
+                self._log(invoice, action="cdar_event", details={"status_code": code}),
+                base + timedelta(microseconds=i),
+            )
+        self._received_at(
+            self._log(
+                invoice,
+                action="status_change",
+                old_status="transmitting",
+                new_status="transmitted",
+            ),
+            base,
+        )
+        self._received_at(
+            self._log(invoice, action="cdar_paid_submitted"),
+            base + timedelta(seconds=1),
+        )
+
+        titles = [e.title for e in build_timeline(invoice.audit_logs.all())]
+
+        assert titles == [
+            "Statut 212 émis",
+            "Transmission en cours → Transmise",
+            "Statut 211 reçu",
+            "Statut 203 reçu",
+            "Statut 202 reçu",
+            "Statut 201 reçu",
+            "Statut 200 reçu",
+        ]
+
+    def test_submitted_212_and_its_echo_are_one_entry(self):
+        from datetime import UTC, datetime, timedelta
+
+        from apps.ui.timeline import build_timeline
+
+        invoice = InvoiceFactory()
+        sent_at = datetime(2026, 10, 11, 19, 18, 47, tzinfo=UTC)
+        self._received_at(
+            self._log(
+                invoice,
+                action="cdar_paid_submitted",
+                details={"flow_id": "ie_1", "document_id": "CDV-1"},
+            ),
+            sent_at,
+        )
+        self._received_at(
+            self._log(
+                invoice,
+                action="cdar_event",
+                details={
+                    "status_code": "212",
+                    "status_description": "Encaissée",
+                    "issuer_role": "SE",
+                    "flow_direction": "Out",
+                    "document_id": "CDV-1",
+                    "amount": "29.00",
+                },
+            ),
+            sent_at + timedelta(minutes=15),
+        )
+        self._received_at(
+            self._log(
+                invoice,
+                action="cdar_event",
+                details={
+                    "status_code": "211",
+                    "issuer_role": "BY",
+                    "flow_direction": "In",
+                },
+            ),
+            sent_at - timedelta(minutes=1),
+        )
+
+        entries = build_timeline(invoice.audit_logs.all())
+
+        assert [e.title for e in entries] == ["Statut 212 émis", "Statut 211 reçu"]
+        labels = {label: value for label, value, _ in entries[0].rows}
+        assert labels["Confirmé par la plateforme"] == "11/10/2026 à 21:33"
+        assert "29" in labels["Montant"]
+
+    def test_old_events_use_issuer_role_for_direction(self):
+        from apps.ui.timeline import build_entry
+
+        log = self._log(
+            InvoiceFactory(),
+            action="cdar_event",
+            details={"status_code": "212", "issuer_role": "SE"},
+        )
+        assert build_entry(log).title == "Statut 212 émis"
+
+
+@pytest.mark.django_db
+class TestLifecycleSteps:
+    def _steps(self, *events):
+        from apps.billing.models import InvoiceAuditLog
+        from apps.ui.timeline import lifecycle_steps
+
+        invoice = InvoiceFactory()
+        for action, code in events:
+            InvoiceAuditLog.objects.create(
+                invoice=invoice,
+                action=action,
+                details={"status_code": code} if code else {},
+            )
+        steps = lifecycle_steps(invoice)
+        return steps and [(s["label"], s["state"]) for s in steps]
+
+    def test_not_transmitted(self):
+        assert self._steps() is None
+
+    def test_just_submitted(self):
+        assert self._steps(("flow_submitted", None)) == [
+            ("Déposée", "pending"),
+            ("Reçue", "pending"),
+            ("Mise à disposition", "pending"),
+            ("Encaissée", "pending"),
+        ]
+
+    def test_paid_invoice(self):
+        events = [("cdar_event", c) for c in ("200", "201", "202", "203", "211")]
+        assert self._steps(*events, ("cdar_paid_submitted", None)) == [
+            ("Déposée", "done"),
+            ("Émise", "done"),
+            ("Reçue", "done"),
+            ("Mise à disposition", "done"),
+            ("Paiement transmis", "done"),
+            ("Encaissée", "done"),
+        ]
+
+    def test_rejected_stops_the_path(self):
+        assert self._steps(("cdar_event", "200"), ("cdar_event", "213")) == [
+            ("Déposée", "done"),
+            ("Rejetée", "error"),
+        ]
+
+    def test_disputed_is_a_warning(self):
+        steps = self._steps(*[("cdar_event", c) for c in ("200", "202", "203", "207")])
+        assert ("En litige", "warn") in steps
+        assert steps[-1] == ("Encaissée", "pending")

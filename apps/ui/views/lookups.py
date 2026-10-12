@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 
 from apps.billing.services.sirene_client import SireneError
 from apps.billing.services.sirene_client import lookup as sirene_lookup_fn
@@ -33,12 +34,20 @@ def pdp_settings(request):
     pdp_status_loaded = False
     api_error = None
 
+    superpdp = {}
     if client_uid and client.is_configured:
         try:
             pdp_config = client.get_pdp_config(client_uid) or {}
             pdp_status_loaded = True
+            superpdp = client.get_superpdp_status(client_uid) or {}
         except FactPulseError as e:
             api_error = str(e)
+
+    connected = request.GET.get("superpdp_connected")
+    if connected == "true":
+        messages.success(request, "SuperPDP connecté.")
+    elif connected == "false":
+        messages.error(request, "Connexion SuperPDP non aboutie. Réessayez.")
 
     if request.method == "POST":
         if not client_uid:
@@ -46,6 +55,28 @@ def pdp_settings(request):
             return redirect("ui:pdp_settings")
 
         action = request.POST.get("action", "save")
+
+        if action == "superpdp_connect":
+            return_url = request.build_absolute_uri(reverse("ui:pdp_settings"))
+            try:
+                return redirect(
+                    client.superpdp_connect_url(
+                        client_uid,
+                        mode_sandbox=request.POST.get("mode_sandbox") == "on",
+                        return_url=return_url,
+                    )
+                )
+            except FactPulseError as e:
+                messages.error(request, f"Erreur FactPulse : {e}")
+                return redirect("ui:pdp_settings")
+
+        if action == "superpdp_disconnect":
+            try:
+                client.disconnect_superpdp(client_uid)
+                messages.success(request, "SuperPDP déconnecté.")
+            except FactPulseError as e:
+                messages.error(request, f"Erreur FactPulse : {e}")
+            return redirect("ui:pdp_settings")
 
         if action == "toggle_active":
             if not pdp_status_loaded or not pdp_config.get("isConfigured"):
@@ -88,6 +119,7 @@ def pdp_settings(request):
                     "client_uid": client_uid,
                     "pdp_config": pdp_config,
                     "pdp_status_loaded": pdp_status_loaded,
+                    "superpdp": superpdp,
                 },
             )
 
@@ -119,6 +151,7 @@ def pdp_settings(request):
             "pdp_config": pdp_config,
             "pdp_status_loaded": pdp_status_loaded,
             "api_error": api_error,
+            "superpdp": superpdp,
         },
     )
 

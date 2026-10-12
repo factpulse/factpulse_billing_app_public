@@ -74,6 +74,19 @@ const InvoiceCalculator = {
             vatLines: vatLines,
         };
     },
+
+    /**
+     * Display helpers (French formatting): 1234.5 -> "1 234,50 €", "5.50" -> "5,5 %".
+     */
+    formatAmount(value) {
+        const n = parseFloat(value) || 0;
+        return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' }).format(n);
+    },
+
+    formatRate(value) {
+        const n = parseFloat(value) || 0;
+        return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(n) + '\u00a0%';
+    },
 };
 
 // Export for Node.js testing (Vitest)

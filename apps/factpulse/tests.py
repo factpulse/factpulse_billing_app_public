@@ -141,6 +141,14 @@ class TestClientApiMethods:
         }
 
     @patch("apps.factpulse.client.requests.request")
+    def test_disconnect_superpdp(self, mock_request):
+        mock_request.return_value = MagicMock(status_code=200)
+
+        assert self.client.disconnect_superpdp("uid-1") is True
+        assert mock_request.call_args[0][0] == "DELETE"
+        assert mock_request.call_args[0][1].endswith("/clients/uid-1/superpdp")
+
+    @patch("apps.factpulse.client.requests.request")
     def test_get_superpdp_status(self, mock_request):
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -564,6 +572,8 @@ class TestPollCdarEvents:
                             "statusCode": "200",
                             "statusDescription": "Déposée",
                             "at": "2026-02-17T10:00:00Z",
+                            "flowDirection": "In",
+                            "flowId": "lc-1",
                         },
                     ],
                     "totalEvents": 1,
@@ -578,6 +588,8 @@ class TestPollCdarEvents:
         events = InvoiceAuditLog.objects.filter(invoice=invoice, action="cdar_event")
         assert events.count() == 1
         assert events.first().details["status_code"] == "200"
+        assert events.first().details["flow_direction"] == "In"
+        assert events.first().details["flow_id"] == "lc-1"
 
     @patch("apps.factpulse.tasks.client")
     def test_deduplicates_events(self, mock_client, org, supplier):

@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}
+    Vue d'ensemble — FactPulse Billing
+{% endblock title %}
+{% block extra_head %}
+    <style>
+        .ov-status { display: flex; gap: .75rem; align-items: flex-start; padding: 1rem 1.25rem; border-radius: var(--radius-lg); margin-bottom: 1.25rem; border: 1px solid var(--border); }
+        .ov-status.ok { background: rgba(74, 222, 128, .08); border-color: rgba(74, 222, 128, .25); }
+        .ov-status.warn { background: rgba(251, 191, 36, .08); border-color: rgba(251, 191, 36, .25); }
+        .ov-status strong { display: block; margin-bottom: .25rem; }
+        .ov-status ul { margin: .25rem 0 0; padding-left: 1.1rem; }
+        .ov-icon { font-size: 1.2rem; line-height: 1.4; }
+        .ov-grid { display: grid; gap: 1.25rem; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 1.25rem; }
+        .ov-grid .section-box { margin-bottom: 0; }
+        .ov-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+        .ov-head h3 { margin: 0; flex: 1; font-size: 1rem; }
+        .ov-head a { font-size: .85rem; }
+        .ov-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+        .ov-inline { display: inline-block; margin-right: .4rem; }
+        .ov-dot.ok { background: var(--success); }
+        .ov-dot.warn { background: var(--warning); }
+        .ov-summary { color: var(--text-secondary); margin: 0 0 .75rem; font-size: .9rem; }
+        .ov-rows { display: grid; grid-template-columns: auto 1fr; gap: .35rem 1rem; margin: 0; font-size: .9rem; }
+        .ov-rows dt { color: var(--text-muted); }
+        .ov-rows dd { margin: 0; overflow-wrap: anywhere; }
+        .ov-flow { width: 100%; border-collapse: collapse; font-size: .9rem; }
+        .ov-flow th { text-align: left; color: var(--text-muted); font-weight: 500; padding: .4rem .75rem .4rem 0; }
+        .ov-flow td { padding: .6rem .75rem .6rem 0; border-top: 1px solid var(--border); vertical-align: top; }
+        .ov-flow .ov-auto { color: var(--success); font-weight: 600; }
+        .ov-flow small { display: block; color: var(--text-muted); }
+        .ov-scroll { overflow-x: auto; }
+        .ov-integrations { display: flex; flex-wrap: wrap; gap: 1.5rem; font-size: .9rem; }
+        .ov-integrations b { font-size: 1.1rem; margin-right: .3rem; }
+    </style>
+{% endblock extra_head %}
+{% block content %}
+    <div class="topbar">
+        <div>
+            <h1>Vue d'ensemble</h1>
+            <p class="topbar-subtitle">Toute votre configuration sur une page.</p>
+        </div>
+    </div>
+    {% if todo %}
+        <div class="ov-status warn">
+            <span class="ov-icon" aria-hidden="true">!</span>
+            <div>
+                <strong>{{ todo|length }} point{{ todo|length|pluralize }} à régler</strong>
+                <ul>
+                    {% for item in todo %}
+                        <li>
+                            {{ item.title }} — {{ item.summary }}
+                            {% if item.action %}<a href="{{ item.action.0 }}">{{ item.action.1 }}</a>{% endif %}
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    {% else %}
+        <div class="ov-status ok">
+            <span class="ov-icon" aria-hidden="true">✓</span>
+            <div>
+                <strong>Tout est en ordre</strong>
+                Vos factures peuvent être émises et transmises à votre plateforme agréée.
+            </div>
+        </div>
+    {% endif %}
+    <div class="ov-grid">
+        {% for card in cards %}
+            <section class="section-box" id="ov-{{ card.key }}">
+                <div class="ov-head">
+                    <span class="ov-dot {{ card.state }}"
+                          title="{% if card.state == 'ok' %}Prêt{% else %}À régler{% endif %}"></span>
+                    <h3>{{ card.title }}</h3>
+                    {% if card.action %}<a href="{{ card.action.0 }}">{{ card.action.1 }}</a>{% endif %}
+                </div>
+                {% if card.summary %}<p class="ov-summary">{{ card.summary }}</p>{% endif %}
+                {% if card.rows %}
+                    <dl class="ov-rows">
+                        {% for label, value in card.rows %}
+                            <dt>{{ label }}</dt>
+                            <dd>
+                                {{ value }}
+                            </dd>
+                        {% endfor %}
+                    </dl>
+                {% endif %}
+            </section>
+        {% endfor %}
+    </div>
+    <section class="section-box" id="ov-sources">
+        <h3>Parcours de vos factures</h3>
+        <p class="section-hint">D'où viennent vos factures et ce qui se passe ensuite.</p>
+        <div class="ov-scroll">
+            <table class="ov-flow">
+                <thead>
+                    <tr>
+                        <th>Source</th>
+                        <th>Arrivée</th>
+                        <th>Validation</th>
+                        <th>Transmission</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in sources %}
+                        <tr>
+                            <td>
+                                <span class="ov-dot ov-inline {{ s.state }}"></span>
+                                <strong>{{ s.name }}</strong>
+                                <small>{{ s.detail }}</small>
+                            </td>
+                            <td>{{ s.arrival }}</td>
+                            <td {% if s.validation == 'Automatique' %}class="ov-auto"{% endif %}>{{ s.validation }}</td>
+                            <td {% if s.transmission == 'Automatique' %}class="ov-auto"{% endif %}>{{ s.transmission }}</td>
+                            <td>
+                                {% if s.action %}<a href="{{ s.action.0 }}">{{ s.action.1 }}</a>{% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="section-box" id="ov-integrations">
+        <h3>Intégrations</h3>
+        <div class="ov-integrations">
+            {% for label, count, url in integrations %}
+                <span>
+                    <b>{{ count }}</b>
+                    {% if url %}
+                        <a href="{{ url }}">{{ label }}</a>
+                    {% else %}
+                        {{ label }}
+                    {% endif %}
+                </span>
+            {% endfor %}
+        </div>
+    </section>
+{% endblock content %}

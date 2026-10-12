@@ -1,10 +1,18 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}
     Connexion — FactPulse Billing
 {% endblock title %}
 {% block content_anonymous %}
     <div class="login-container">
-        <h1 class="login-title">FactPulse Billing</h1>
+        <div class="auth-brand">
+            <img src="{% static 'images/logo/logo.png' %}"
+                 alt="FactPulse"
+                 width="712"
+                 height="512">
+        </div>
+        <h1 class="login-title">Bon retour</h1>
+        <p class="login-subtitle">Connectez-vous à votre espace de facturation</p>
         {% if email_not_verified %}
             <div class="error-box">
                 Votre adresse email n'a pas encore été vérifiée.
@@ -15,10 +23,21 @@
         {% endif %}
         <form method="post">
             {% csrf_token %}
-            <label for="id_username">Nom d'utilisateur</label>
-            <input type="text" name="username" id="id_username" autofocus required>
+            <label for="id_username">Adresse e-mail</label>
+            <input type="text"
+                   name="username"
+                   id="id_username"
+                   inputmode="email"
+                   autocomplete="username"
+                   placeholder="vous@entreprise.fr"
+                   autofocus
+                   required>
             <label for="id_password">Mot de passe</label>
-            <input type="password" name="password" id="id_password" required>
+            <input type="password"
+                   name="password"
+                   id="id_password"
+                   autocomplete="current-password"
+                   required>
             <button type="submit" class="login-btn">Se connecter</button>
         </form>
         <p class="login-link">

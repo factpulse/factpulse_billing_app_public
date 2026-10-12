@@ -11,10 +11,10 @@
     <tbody>
         {% for c in customers %}
             <tr {% if c.archived %}class="row-archived"{% endif %}>
-                <td>{{ c.name }}</td>
-                <td>{{ c.siren|default:"—" }}</td>
+                <td class="cell-strong">{{ c.name }}</td>
+                <td class="nowrap">{{ c.siren|default:"—" }}</td>
                 <td>{{ c.email|default:"—" }}</td>
-                <td>{{ c.external_id|default:"—" }}</td>
+                <td class="cell-muted">{{ c.external_id|default:"—" }}</td>
                 <td class="actions-cell">
                     <a href="{% url 'ui:customer_edit' uuid=c.uuid %}" class="btn-sm">Modifier</a>
                     <form method="post"

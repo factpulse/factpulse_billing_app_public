@@ -311,6 +311,17 @@ class FactPulseClient:
             return response.json()
         self._handle_error(response)
 
+    def disconnect_superpdp(self, client_uid):
+        """DELETE /api/v1/clients/{uid}/superpdp — revoke and forget the connection."""
+        if not self.is_configured:
+            raise FactPulseUnavailableError("FactPulse API is not configured.")
+
+        url = f"{self.base_url}/api/v1/clients/{client_uid}/superpdp"
+        response = self._request("DELETE", url, client_uid=str(client_uid))
+        if response.status_code in (200, 204):
+            return True
+        self._handle_error(response)
+
     # ---- Processing API methods ----
 
     def generate_invoice(self, invoice_data, source_pdf=None, client_uid=None):

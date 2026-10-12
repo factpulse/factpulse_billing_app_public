@@ -5,12 +5,12 @@
 {% block content %}
     <div class="topbar">
         <h1>Factures</h1>
-        <a href="{% url 'ui:invoice_create' %}" role="button">Nouvelle facture</a>
+        <a href="{% url 'ui:invoice_create' %}" role="button">+ Nouvelle facture</a>
     </div>
     <div class="filter-bar">
         <input type="search"
                name="search"
-               placeholder="Rechercher..."
+               placeholder="Rechercher un numéro ou un client…"
                hx-get="{% url 'ui:invoice_list' %}"
                hx-trigger="keyup changed delay:300ms"
                hx-target="#invoice-table"
@@ -29,6 +29,7 @@
             {% endfor %}
             <option value="pending"
                     {% if current_status == "pending" %}selected{% endif %}>En attente</option>
+            <option value="sent" {% if current_status == "sent" %}selected{% endif %}>Transmise à la plateforme</option>
         </select>
     </div>
     <div id="invoice-table">{% include "ui/partials/invoice_table.html" %}</div>

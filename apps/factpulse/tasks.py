@@ -637,6 +637,9 @@ def _process_single_cdar_event(invoice, seller_id, invoice_id, event, existing_k
             "issuer_siren": event.get("issuerSiren", ""),
             "issuer_role": event.get("issuerRole", ""),
             "reason_code": event.get("reasonCode", ""),
+            "flow_direction": event.get("flowDirection", ""),
+            "flow_id": event.get("flowId", ""),
+            "document_id": event.get("documentId", ""),
         },
     )
 
@@ -698,7 +701,7 @@ def _maybe_auto_mark_paid(invoice):
         return
 
     try:
-        invoice_service.mark_paid(invoice)
+        invoice_service.mark_paid(invoice, source="prepaid_auto")
     except Exception:
         logger.exception(
             "Failed to auto-mark invoice %s as paid (pre-recorded payment)",

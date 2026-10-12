@@ -120,6 +120,7 @@ urlpatterns = [
         name="supplier_defaults",
     ),
     # Settings
+    path("settings/", views.settings_overview, name="settings_overview"),
     path("settings/pdp/", views.pdp_settings, name="pdp_settings"),
     path("settings/payments/", views.payment_settings, name="payment_settings"),
     path(

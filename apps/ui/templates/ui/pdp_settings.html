@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load ui_format %}
 {% block title %}
     Configuration plateforme agréée — FactPulse Billing
 {% endblock title %}
@@ -82,7 +83,7 @@
                         <tr>
                             <td>Dernier test</td>
                             <td>
-                                {{ pdp_config.lastTestAt }}
+                                {{ pdp_config.lastTestAt|isodatetime }}
                                 {% if pdp_config.lastTestSuccess %}
                                     — <span class="text-success">OK</span>
                                 {% else %}
@@ -107,11 +108,42 @@
                 </form>
             {% endif %}
         </div>
-        <!-- Config form -->
+        <!-- SuperPDP: OAuth Authorization Code -->
+        <div class="section-box form-narrow-lg">
+            <h3>SuperPDP</h3>
+            {% if superpdp.connected %}
+                <p>
+                    <span class="text-success">Connecté</span>
+                    {% if superpdp.modeSandbox %}(bac à sable){% endif %}
+                    {% if superpdp.connectedAt %}depuis le {{ superpdp.connectedAt|isodatetime }}{% endif %}
+                </p>
+                {% if superpdp.lastError %}<p class="text-error">{{ superpdp.lastError }}</p>{% endif %}
+                <form method="post"
+                      onsubmit="return confirm('Déconnecter SuperPDP ? La transmission des factures sera suspendue.')">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="superpdp_disconnect">
+                    <button type="submit" class="btn-danger">Déconnecter SuperPDP</button>
+                </form>
+            {% else %}
+                <p class="section-hint">
+                    Vous serez redirigé vers SuperPDP pour autoriser FactPulse sur votre compte, puis ramené ici.
+                </p>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="superpdp_connect">
+                    <label>
+                        <input type="checkbox" name="mode_sandbox">
+                        Bac à sable (données fictives, pour tester)
+                    </label>
+                    <button type="submit" class="btn-submit-full">Connecter SuperPDP</button>
+                </form>
+            {% endif %}
+        </div>
+        <!-- Other platforms: AFNOR XP Z12-013 client credentials -->
         <form method="post" class="form-narrow-lg">
             {% csrf_token %}
             <div class="section-box">
-                <h3>Credentials plateforme agréée</h3>
+                <h3>Autre plateforme agréée</h3>
                 <p class="section-hint">
                     Ces informations sont transmises de manière sécurisée à FactPulse et ne sont jamais stockées localement.
                 </p>

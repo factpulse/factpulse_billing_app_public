@@ -11,7 +11,7 @@
     <tbody>
         {% for s in suppliers %}
             <tr {% if s.archived %}class="row-archived"{% endif %}>
-                <td>{{ s.name }}</td>
+                <td class="cell-strong">{{ s.name }}</td>
                 <td>{{ s.siren|default:"—" }}</td>
                 <td>{{ s.vat_number|default:"—" }}</td>
                 <td>

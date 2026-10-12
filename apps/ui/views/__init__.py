@@ -34,6 +34,7 @@ from apps.ui.views.lookups import (  # noqa: F401
     pdp_settings,
     sirene_lookup,
 )
+from apps.ui.views.overview import settings_overview  # noqa: F401
 from apps.ui.views.payments import payment_settings  # noqa: F401
 from apps.ui.views.products import (  # noqa: F401
     product_archive,

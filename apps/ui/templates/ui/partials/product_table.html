@@ -1,32 +1,21 @@
+{% load ui_format %}
 <table>
     <thead>
         <tr>
             <th>Nom</th>
             <th>Référence</th>
-            <th>Prix HT</th>
-            <th>TVA</th>
+            <th class="num">Prix HT</th>
+            <th class="num">TVA</th>
             <th></th>
         </tr>
     </thead>
     <tbody>
         {% for p in products %}
             <tr {% if p.archived %}class="row-archived"{% endif %}>
-                <td>{{ p.name }}</td>
-                <td>{{ p.reference|default:"—" }}</td>
-                <td>
-                    {% if p.default_unit_price is not None %}
-                        {{ p.default_unit_price|floatformat:2 }}
-                    {% else %}
-                        —
-                    {% endif %}
-                </td>
-                <td>
-                    {% if p.default_vat_rate is not None %}
-                        {{ p.default_vat_rate|floatformat:2 }}&nbsp;%
-                    {% else %}
-                        —
-                    {% endif %}
-                </td>
+                <td class="cell-strong">{{ p.name }}</td>
+                <td class="cell-muted">{{ p.reference|default:"—" }}</td>
+                <td class="num">{{ p.default_unit_price|eur }}</td>
+                <td class="num">{{ p.default_vat_rate|percent }}</td>
                 <td class="actions-cell">
                     <a href="{% url 'ui:product_edit' uuid=p.uuid %}" class="btn-sm">Modifier</a>
                     <form method="post"

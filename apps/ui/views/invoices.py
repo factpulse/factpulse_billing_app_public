@@ -13,6 +13,7 @@ from apps.billing.constants import INVOICE_TYPE_CODE, VAT_ACCOUNTING_CODE
 from apps.billing.models import Invoice
 from apps.billing.services import invoice_service
 from apps.core.exceptions import ConflictError
+from apps.ui.timeline import build_timeline, lifecycle_steps
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,9 @@ def invoice_list(request):
     status_filter = request.GET.get("status")
     if status_filter == "pending":
         invoices = invoices.filter(status__in=[S.VALIDATED, S.TRANSMITTED, S.ACCEPTED])
+    elif status_filter == "sent":
+        # Sent to the PA, whatever happened next (accepted, paid, cancelled...)
+        invoices = invoices.exclude(pdp_transmission_id="")
     elif status_filter:
         invoices = invoices.filter(status=status_filter)
 
@@ -168,7 +172,7 @@ def invoice_detail(request, uuid):
     invoice = get_object_or_404(
         Invoice, uuid=uuid, organization=org, deleted_at__isnull=True
     )
-    audit_logs = invoice.audit_logs.all()[:20]
+    audit_logs = build_timeline(invoice.audit_logs.select_related("user")[:20])
 
     return render(
         request,
@@ -176,6 +180,7 @@ def invoice_detail(request, uuid):
         {
             "invoice": invoice,
             "audit_logs": audit_logs,
+            "lifecycle": lifecycle_steps(invoice),
             "data": invoice.en16931_data,
         },
     )

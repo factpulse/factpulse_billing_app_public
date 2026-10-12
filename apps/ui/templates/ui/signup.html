@@ -1,10 +1,18 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}
     Créer un compte — FactPulse Billing
 {% endblock title %}
 {% block content_anonymous %}
     <div class="login-container">
-        <h1 class="login-title">FactPulse Billing</h1>
+        <div class="auth-brand">
+            <img src="{% static 'images/logo/logo.png' %}"
+                 alt="FactPulse"
+                 width="712"
+                 height="512">
+        </div>
+        <h1 class="login-title">Créer votre compte</h1>
+        <p class="login-subtitle">Factur-X conforme, prêt pour la réforme 2026</p>
         {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
         <form method="post">
             {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}

@@ -5,6 +5,22 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.3.0] — 2026-10-12
+
+### Ajouté
+
+- **Vue d'ensemble** (Réglages) : toute la configuration sur une page — entreprise, plateforme agréée, parcours des factures par source (arrivée, validation, transmission), intégrations — avec la liste des points à régler
+- **Cycle de vie** : résumé des statuts CDAR en tête de la fiche facture (Déposée → Reçue → Mise à disposition → Encaissée), refus et rejets en rouge
+- **Historique facture** : entrées dépliables avec leurs détails (erreur, date du statut, émetteur, origine du paiement)
+- **SuperPDP** : connexion en un clic (OAuth) et déconnexion depuis la page Plateforme agréée
+- **Liste des factures** : filtre « Transmise à la plateforme »
+
+### Modifié
+
+- Refonte visuelle : thème sombre épuré, navigation par sections, affichage mobile, montants au format français
+- Historique : statuts reçus ensemble affichés dans l'ordre du cycle de vie, « émis » ou « reçu » selon la direction du flux, statut 212 envoyé et son retour par la plateforme fusionnés, heure des statuts sans fuseau correctement interprétée
+- Statuts CDAR : direction, identifiant du flux et du message enregistrés
+
 ## [1.2.0] — 2026-10-10
 
 ### Ajouté

@@ -377,8 +377,11 @@ def transmit_invoice(invoice, user=None):
     return invoice
 
 
-def mark_paid(invoice, payment_data=None, user=None):
-    """Transition to paid."""
+def mark_paid(invoice, payment_data=None, user=None, source=None):
+    """Transition to paid.
+
+    ``source`` tells the history where the payment came from (e.g. "prepaid_auto").
+    """
     state_machine.validate_transition(invoice, S.PAID)
 
     old_status = invoice.status
@@ -405,13 +408,30 @@ def mark_paid(invoice, payment_data=None, user=None):
 
     invoice.save()
 
+    # Record the payment actually retained (pre-filled values included), JSON-safe
+    details = {
+        key: value.isoformat() if hasattr(value, "isoformat") else value
+        for key, value in payment_data.items()
+    }
+    details.update(
+        {
+            "payment_date": str(invoice.payment_date or ""),
+            "payment_reference": invoice.payment_reference or "",
+            "amount": str(invoice.payment_amount)
+            if invoice.payment_amount is not None
+            else "",
+        }
+    )
+    if source:
+        details["source"] = source
+
     _audit_log(
         invoice,
         A.STATUS_CHANGE,
         user=user,
         old_status=old_status,
         new_status=S.PAID,
-        details=payment_data,
+        details=details,
     )
 
     # Launch CDAR paid status submission (best-effort, async)

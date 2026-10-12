@@ -1,4 +1,4 @@
-{% load static %}
+{% load static ui_format %}
 <!DOCTYPE html>
 <html lang="fr">
     <head>
@@ -119,42 +119,171 @@
     </head>
     <body>
         {% if user.is_authenticated %}
+            <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-hidden="true">
+            <header class="mobile-bar">
+                <a href="{% url 'ui:dashboard' %}" class="logo">
+                    <img src="{% static 'images/logo/logo.png' %}"
+                         alt=""
+                         width="712"
+                         height="512">
+                    FactPulse
+                </a>
+                <label for="nav-toggle" class="menu-btn" aria-label="Ouvrir le menu">
+                    <svg viewBox="0 0 24 24"
+                         fill="none"
+                         stroke-width="1.8"
+                         stroke-linecap="round"
+                         stroke-linejoin="round"
+                         aria-hidden="true">
+                        <path d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                </label>
+            </header>
             <div class="app-layout">
+                <label for="nav-toggle" class="nav-backdrop" aria-hidden="true"></label>
                 <aside class="sidebar">
                     <a href="{% url 'ui:dashboard' %}" class="logo">
                         <img src="{% static 'images/logo/logo.png' %}"
                              alt="FactPulse"
                              width="712"
                              height="512">
-                        <span>FactPulse App.</span>
+                        <span>FactPulse <small>Facturation électronique</small></span>
                     </a>
                     <nav>
+                        <div class="nav-section">Facturation</div>
                         <a href="{% url 'ui:dashboard' %}"
-                           {% if request.resolver_match.url_name == 'dashboard' %}class="active"{% endif %}>Tableau de bord</a>
+                           {% if request.resolver_match.url_name == 'dashboard' %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <rect x="3" y="3" width="7" height="9" rx="1.5" /><rect x="14" y="3" width="7" height="5" rx="1.5" /><rect x="14" y="12" width="7" height="9" rx="1.5" /><rect x="3" y="16" width="7" height="5" rx="1.5" />
+                            </svg>
+                        Tableau de bord</a>
                         <a href="{% url 'ui:invoice_list' %}"
-                           {% if 'invoice' in request.resolver_match.url_name %}class="active"{% endif %}>Factures</a>
+                           {% if 'invoice' in request.resolver_match.url_name %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+                                <path d="M14 3v5h5" />
+                                <path d="M9 13h6M9 17h4" />
+                            </svg>
+                        Factures</a>
+                        <div class="nav-section">Référentiel</div>
                         <a href="{% url 'ui:customer_list' %}"
-                           {% if 'customer' in request.resolver_match.url_name %}class="active"{% endif %}>Clients</a>
+                           {% if 'customer' in request.resolver_match.url_name %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+                                <circle cx="9" cy="7" r="4" />
+                                <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                            </svg>
+                        Clients</a>
                         <a href="{% url 'ui:product_list' %}"
-                           {% if 'product' in request.resolver_match.url_name %}class="active"{% endif %}>Produits</a>
+                           {% if 'product' in request.resolver_match.url_name %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <path d="M21 8 12 3 3 8v8l9 5 9-5z" />
+                                <path d="m3 8 9 5 9-5M12 13v8" />
+                            </svg>
+                        Produits</a>
                         <a href="{% url 'ui:supplier_list' %}"
-                           {% if 'supplier' in request.resolver_match.url_name %}class="active"{% endif %}>Fournisseurs</a>
+                           {% if 'supplier' in request.resolver_match.url_name %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <rect x="4" y="3" width="16" height="18" rx="2" />
+                                <path d="M9 7h.01M15 7h.01M9 11h.01M15 11h.01M9 15h.01M15 15h.01M10 21v-3h4v3" />
+                            </svg>
+                        Fournisseurs</a>
+                        <div class="nav-section">Réglages</div>
+                        <a href="{% url 'ui:settings_overview' %}"
+                           {% if request.resolver_match.url_name == 'settings_overview' %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <path d="M9 11l3 3 8-8" />
+                                <path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" />
+                            </svg>
+                        Vue d'ensemble</a>
                         {% if is_owner %}
                             <a href="{% url 'ui:pdp_settings' %}"
-                               {% if request.resolver_match.url_name == 'pdp_settings' %}class="active"{% endif %}>Plateforme agréée</a>
+                               {% if request.resolver_match.url_name == 'pdp_settings' %}class="active" aria-current="page"{% endif %}>
+                                <svg viewBox="0 0 24 24"
+                                     fill="none"
+                                     stroke-width="1.8"
+                                     stroke-linecap="round"
+                                     stroke-linejoin="round"
+                                     aria-hidden="true">
+                                    <path d="m22 2-7 20-4-9-9-4z" />
+                                    <path d="M22 2 11 13" />
+                                </svg>
+                            Plateforme agréée</a>
                             <a href="{% url 'ui:payment_settings' %}"
-                               {% if request.resolver_match.url_name == 'payment_settings' %}class="active"{% endif %}>Paiements</a>
+                               {% if request.resolver_match.url_name == 'payment_settings' %}class="active" aria-current="page"{% endif %}>
+                                <svg viewBox="0 0 24 24"
+                                     fill="none"
+                                     stroke-width="1.8"
+                                     stroke-linecap="round"
+                                     stroke-linejoin="round"
+                                     aria-hidden="true">
+                                    <rect x="2" y="5" width="20" height="14" rx="2" />
+                                    <path d="M2 10h20M6 15h4" />
+                                </svg>
+                            Paiements</a>
                         {% endif %}
-                        <a href="{% url 'ui:guide' %}"
-                           {% if request.resolver_match.url_name == 'guide' %}class="active"{% endif %}>Guide</a>
                         <a href="{% url 'ui:api_key_list' %}"
-                           {% if request.resolver_match.url_name == 'api_key_list' %}class="active"{% endif %}>Clés API</a>
+                           {% if request.resolver_match.url_name == 'api_key_list' %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <circle cx="7.5" cy="15.5" r="4.5" />
+                                <path d="m10.7 12.3 9.8-9.8M17 6l3 3M14 9l2 2" />
+                            </svg>
+                        Clés API</a>
+                        <a href="{% url 'ui:guide' %}"
+                           {% if request.resolver_match.url_name == 'guide' %}class="active" aria-current="page"{% endif %}>
+                            <svg viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke-width="1.8"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z" />
+                                <path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z" />
+                            </svg>
+                        Guide</a>
                     </nav>
                     <div class="org-selector">
                         {% if organizations %}
                             <form method="post" action="{% url 'ui:switch_org' %}">
                                 {% csrf_token %}
-                                <select name="organization_id" onchange="this.form.submit()">
+                                <select name="organization_id"
+                                        onchange="this.form.submit()"
+                                        aria-label="Organisation">
                                     {% for org in organizations %}
                                         <option value="{{ org.id }}"
                                                 {% if org.id == request.organization.id %}selected{% endif %}>
@@ -165,8 +294,22 @@
                             </form>
                         {% endif %}
                         <div class="user-section">
-                            <div class="user-email">{{ user.get_full_name|default:user.email }}</div>
-                            <a href="{% url 'ui:logout' %}" class="logout-link">Déconnexion</a>
+                            <span class="avatar">{{ user|initials }}</span>
+                            <div class="user-email" title="{{ user.email }}">{{ user.get_full_name|default:user.email }}</div>
+                            <a href="{% url 'ui:logout' %}"
+                               class="logout-link"
+                               title="Déconnexion"
+                               aria-label="Déconnexion">
+                                <svg viewBox="0 0 24 24"
+                                     fill="none"
+                                     stroke-width="1.8"
+                                     stroke-linecap="round"
+                                     stroke-linejoin="round"
+                                     aria-hidden="true">
+                                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                                    <path d="m16 17 5-5-5-5M21 12H9" />
+                                </svg>
+                            </a>
                         </div>
                     </div>
                 </aside>
@@ -186,8 +329,10 @@
                 </main>
             </div>
         {% else %}
-            {% block content_anonymous %}
-            {% endblock content_anonymous %}
+            <div class="auth-page">
+                {% block content_anonymous %}
+                {% endblock content_anonymous %}
+            </div>
         {% endif %}
     </body>
 </html>
