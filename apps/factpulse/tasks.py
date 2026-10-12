@@ -182,7 +182,8 @@ def generate_source_pdf(invoice_uuid):
 def transmit_invoice(invoice_uuid):
     """Submit a Factur-X invoice to the PA via AFNOR Flow Service (POST /flows).
 
-    On 202: stays transmitting (flowId stored, poll_cdar_events handles confirmation).
+    On 202: stays transmitting (flowId stored); check_invoice_lifecycle, then
+    poll_cdar_events, handle the confirmation.
     On error: reverts to validated so user can retry.
     """
     invoice = _get_invoice_or_log(invoice_uuid, select_related_fields=("organization",))
@@ -241,6 +242,13 @@ def transmit_invoice(invoice_uuid):
                 "flow_id": result.get("flowId", ""),
             },
         )
+
+        # The PA usually answers (status 200) within seconds: check this invoice
+        # shortly instead of waiting for the next periodic poll
+        for delay in CDAR_FOLLOWUP_DELAYS:
+            check_invoice_lifecycle.apply_async(
+                args=[str(invoice.uuid)], countdown=delay
+            )
 
     except (FactPulseError, FactPulseUnavailableError) as e:
         logger.error("Failed to transmit invoice %s: %s", invoice_uuid, e)
@@ -514,9 +522,7 @@ def poll_cdar_events(invoice_number=None, days=7):
         210 (Refusée)         → transmitting/transmitted → rejected
         213 (Rejetée)         → transmitting/transmitted → rejected
     """
-    orgs = Organization.objects.filter(factpulse_client_uid__isnull=False)
-
-    for org in orgs:
+    for org in _orgs_with_pending_lifecycle():
         client_uid = _get_client_uid(org)
 
         try:
@@ -531,6 +537,51 @@ def poll_cdar_events(invoice_number=None, days=7):
 
         invoices_with_cdar = _process_cdar_lifecycle(org, data)
         _check_afnor_flow_fallback(org, client_uid, invoice_number, invoices_with_cdar)
+
+
+# Invoices whose lifecycle can still evolve (statuses from the PA or the buyer)
+CDAR_PENDING_STATUSES = (S.TRANSMITTING, S.TRANSMITTED, S.ACCEPTED)
+# Targeted checks after submission (seconds), until the PA acknowledges it
+CDAR_FOLLOWUP_DELAYS = (20, 60, 180)
+
+
+def _orgs_with_pending_lifecycle():
+    """Only organizations with an invoice still expecting lifecycle statuses.
+
+    Polling every provisioned organization costs one PA query each, every cycle,
+    even for accounts that never sent an invoice.
+    """
+    return Organization.objects.filter(
+        factpulse_client_uid__isnull=False,
+        invoices__pdp_transmission_id__gt="",
+        invoices__status__in=CDAR_PENDING_STATUSES,
+        invoices__deleted_at__isnull=True,
+    ).distinct()
+
+
+@shared_task
+def check_invoice_lifecycle(invoice_uuid):
+    """Targeted lifecycle check of one invoice, while it is still being transmitted."""
+    invoice = (
+        Invoice.objects.filter(uuid=invoice_uuid, deleted_at__isnull=True)
+        .select_related("organization")
+        .first()
+    )
+    if not invoice or invoice.status != S.TRANSMITTING or not invoice.number:
+        return
+
+    org = invoice.organization
+    client_uid = _get_client_uid(org)
+    try:
+        data = client.get_cdar_lifecycle(
+            days=1, invoice_id=invoice.number, client_uid=client_uid
+        )
+    except Exception as e:
+        logger.warning("CDAR: lifecycle check failed for %s: %s", invoice.number, e)
+        return
+
+    invoices_with_cdar = _process_cdar_lifecycle(org, data)
+    _check_afnor_flow_fallback(org, client_uid, invoice.number, invoices_with_cdar)
 
 
 # CDAR status code → target invoice status

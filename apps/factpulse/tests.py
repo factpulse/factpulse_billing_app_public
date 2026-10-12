@@ -2293,3 +2293,112 @@ class TestPollCdarCommand:
 
         output = out.getvalue()
         assert "1 new CDAR event(s)" in output
+
+
+@pytest.mark.django_db
+class TestLifecyclePollingScope:
+    """Only organizations with an invoice still in its lifecycle are polled."""
+
+    def _org_with_invoice(self, slug, status, flow_id="flow-1"):
+        from apps.billing.factories import InvoiceFactory, SupplierFactory
+
+        org = Organization.objects.create(
+            name=slug, slug=slug, factpulse_client_uid=uuid_lib.uuid4()
+        )
+        if status:
+            InvoiceFactory(
+                organization=org,
+                supplier=SupplierFactory(organization=org),
+                status=status,
+                pdp_transmission_id=flow_id,
+            )
+        return org
+
+    def test_only_orgs_with_pending_invoices(self):
+        from apps.factpulse.tasks import _orgs_with_pending_lifecycle
+
+        pending = self._org_with_invoice("pending", "transmitted")
+        self._org_with_invoice("idle", None)
+        self._org_with_invoice("paid", "paid")
+        self._org_with_invoice("draft", "draft", flow_id="")
+
+        assert list(_orgs_with_pending_lifecycle()) == [pending]
+
+    @patch("apps.factpulse.tasks.client")
+    def test_poll_skips_idle_orgs(self, mock_client):
+        from apps.factpulse.tasks import poll_cdar_events
+
+        self._org_with_invoice("idle", None)
+        mock_client.get_cdar_lifecycle.return_value = {"invoices": []}
+
+        poll_cdar_events()
+
+        mock_client.get_cdar_lifecycle.assert_not_called()
+
+
+@pytest.mark.django_db
+class TestInvoiceLifecycleFollowUp:
+    def _transmitting(self, org, supplier, status="transmitting"):
+        from apps.billing.factories import InvoiceFactory
+
+        org.factpulse_client_uid = uuid_lib.uuid4()
+        org.save(update_fields=["factpulse_client_uid"])
+        return InvoiceFactory(
+            organization=org,
+            supplier=supplier,
+            status=status,
+            number="FA-2026-200",
+            pdp_transmission_id="flow-200",
+        )
+
+    @patch("apps.factpulse.tasks.check_invoice_lifecycle.apply_async")
+    @patch("apps.factpulse.tasks.client")
+    def test_submission_schedules_follow_up_checks(
+        self, mock_client, mock_schedule, org, supplier
+    ):
+        from django.core.files.base import ContentFile
+
+        from apps.factpulse.tasks import CDAR_FOLLOWUP_DELAYS, transmit_invoice
+
+        invoice = self._transmitting(org, supplier)
+        invoice.pdf_file.save("t.pdf", ContentFile(b"pdf"), save=True)
+        mock_client.submit_flow.return_value = {"flowId": "flow-200"}
+
+        transmit_invoice(str(invoice.uuid))
+
+        delays = [c.kwargs["countdown"] for c in mock_schedule.call_args_list]
+        assert delays == list(CDAR_FOLLOWUP_DELAYS)
+        assert mock_schedule.call_args.kwargs["args"] == [str(invoice.uuid)]
+
+    @patch("apps.factpulse.tasks.client")
+    def test_status_200_marks_transmitted(self, mock_client, org, supplier):
+        from apps.factpulse.tasks import check_invoice_lifecycle
+
+        invoice = self._transmitting(org, supplier)
+        mock_client.get_cdar_lifecycle.return_value = {
+            "invoices": [
+                {
+                    "sellerId": supplier.siren,
+                    "invoiceId": "FA-2026-200",
+                    "events": [{"statusCode": "200", "at": "2026-10-11T21:10:00"}],
+                }
+            ]
+        }
+
+        check_invoice_lifecycle(str(invoice.uuid))
+
+        invoice.refresh_from_db()
+        assert invoice.status == "transmitted"
+        assert mock_client.get_cdar_lifecycle.call_args.kwargs["invoice_id"] == (
+            "FA-2026-200"
+        )
+
+    @patch("apps.factpulse.tasks.client")
+    def test_no_call_once_acknowledged(self, mock_client, org, supplier):
+        from apps.factpulse.tasks import check_invoice_lifecycle
+
+        invoice = self._transmitting(org, supplier, status="transmitted")
+
+        check_invoice_lifecycle(str(invoice.uuid))
+
+        mock_client.get_cdar_lifecycle.assert_not_called()
