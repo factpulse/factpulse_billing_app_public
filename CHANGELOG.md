@@ -9,8 +9,8 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
 ### Modifié
 
-- Statuts du cycle de vie : seules les organisations ayant une facture en cours de cycle sont interrogées (beaucoup moins d appels à l API)
-- Après l envoi, vérification ciblée de la facture (20 s, 1 min, 3 min) : « Transmission en cours » passe à « Transmise » en quelques secondes
+- Statuts du cycle de vie : seules les organisations ayant une facture en cours de cycle sont interrogées (beaucoup moins d'appels à l'API)
+- Après l'envoi, vérification ciblée de la facture (20 s, 1 min, 3 min) : « Transmission en cours » passe à « Transmise » en quelques secondes
 
 ## [1.3.0] — 2026-10-12
 
