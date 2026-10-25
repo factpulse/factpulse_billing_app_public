@@ -95,6 +95,29 @@ Produits : `list_products`, `get_product`, `create_product`, `update_product`, `
 Fournisseurs : `list_suppliers`, `get_supplier`, `create_supplier`, `update_supplier`, `archive_supplier`
 Autres : `lookup_sirene`, `get_dashboard_stats`
 
+## Publier la version publique
+
+« Mettre à jour la version publique » = synchroniser ce repo (privé) vers
+`factpulse/factpulse_billing_app_public` (clone local : `../factpulse_billing_app_public`).
+
+`scripts/sync-to-public.sh` est interactif (bump, résumé, confirmations) : ne pas le
+lancer tel quel, reproduire ses étapes :
+
+1. Tout committer dans le privé (seul `HEAD` est synchronisé, via `git archive`).
+2. Bump si nécessaire, comme le script : version dans `pyproject.toml`, entrée
+   `## [x.y.z] — AAAA-MM-JJ` / `### Modifié` dans `CHANGELOG.md`, `uv lock`, commit
+   `bump: vx.y.z` dont le corps reprend les puces du CHANGELOG.
+3. `git archive HEAD` dans un dossier temporaire, puis `rsync -rlc --delete` vers le
+   clone public avec les `EXCLUDE_PATTERNS` du script (`--exclude=.git` en plus), puis
+   retirer la cible `sync-public` du `Makefile` public (mêmes `sed` que le script).
+4. Avant de committer, reproduire la CI publique dans le clone public :
+   `uv sync --extra payments && STRIPE_ENABLED=true uv run pytest --cov`.
+   Le seuil de 90 % s'applique **sans `apps/connect`** (exclu du public) : un code
+   couvert uniquement par les tests de `apps/connect` passe dans le privé et échoue
+   dans le public. Corriger en ajoutant des tests dans le privé, puis resynchroniser.
+5. Commit public `vx.y.z — Sync to public` (ou `Sync from private repo` sans bump),
+   corps = puces du CHANGELOG, puis push des deux repos et vérification des deux CI.
+
 ## Conventions
 
 - UUIDs are the public identifiers for all models (never expose PK)

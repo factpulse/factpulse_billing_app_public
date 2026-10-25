@@ -5,6 +5,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.3.3] — 2026-10-25
+
+### Modifié
+
+- Dépendances : correctifs de sécurité (Pillow 13.0, certifi 2026.10.23, brotli 1.2.1, filelock 4.2, virtualenv 21.14.13), aucune vulnérabilité connue restante
+- Fournisseurs : le logo envoyé depuis l'interface est désormais validé comme dans l'API (image valide, formats JPG/PNG/WebP, 2 Mo max)
+
 ## [1.3.2] — 2026-10-12
 
 ### Modifié

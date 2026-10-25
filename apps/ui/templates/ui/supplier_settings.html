@@ -15,6 +15,7 @@
            role="button"
            class="outline">Retour fournisseur</a>
     </div>
+    {% if error %}<div class="error-box">{{ error }}</div>{% endif %}
     <form method="post"
           enctype="multipart/form-data"
           class="form-narrow-lg"
@@ -39,7 +40,7 @@
                     </div>
                 </div>
             {% endif %}
-            <input type="file" name="logo" accept="image/*">
+            <input type="file" name="logo" accept="image/png,image/jpeg,image/webp">
             <label class="label-spaced">Couleur principale</label>
             <input type="color"
                    name="primary_color"

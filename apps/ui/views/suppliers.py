@@ -1,11 +1,14 @@
 """Supplier views — list, create, edit, settings, defaults, archive."""
 
+from django import forms
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.billing.models import Supplier
+from apps.billing.validators import validate_image_extension, validate_image_size
 from apps.ui.views.helpers import build_address_from_post, build_electronic_address
 
 
@@ -102,7 +105,20 @@ def supplier_settings(request, uuid):
             "default_vat_exemption_code", ""
         ).strip()
         if request.FILES.get("logo"):
-            supplier.logo = request.FILES["logo"]
+            # Same checks as the API serializer: Pillow decodes the file
+            # (rejects non-images) + extension and size validators.
+            logo_field = forms.ImageField(
+                validators=[validate_image_extension, validate_image_size]
+            )
+            try:
+                supplier.logo = logo_field.clean(request.FILES["logo"])
+            except ValidationError as e:
+                return render(
+                    request,
+                    "ui/supplier_settings.html",
+                    {"supplier": supplier, "error": " ".join(e.messages)},
+                    status=400,
+                )
         if request.POST.get("logo_clear") == "on":
             supplier.logo = ""
         supplier.save()
