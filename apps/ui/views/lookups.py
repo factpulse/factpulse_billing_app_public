@@ -9,6 +9,7 @@ from django.urls import reverse
 from apps.billing.services.sirene_client import SireneError
 from apps.billing.services.sirene_client import lookup as sirene_lookup_fn
 from apps.core.models import OrganizationMembership
+from apps.core.redirects import ExternalRedirect
 from apps.factpulse.client import FactPulseError, FactPulseUnavailableError
 
 
@@ -59,7 +60,7 @@ def pdp_settings(request):
         if action == "superpdp_connect":
             return_url = request.build_absolute_uri(reverse("ui:pdp_settings"))
             try:
-                return redirect(
+                return ExternalRedirect(
                     client.superpdp_connect_url(
                         client_uid,
                         mode_sandbox=request.POST.get("mode_sandbox") == "on",

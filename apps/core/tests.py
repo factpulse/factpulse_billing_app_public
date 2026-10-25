@@ -669,3 +669,42 @@ class TestCustomExceptionHandler:
         assert response.status_code == 403
         assert body["error"]["message"] == "No access."
         assert body["error"]["details"] == []
+
+
+# ---------------------------------------------------------------------------
+# ExternalRedirect
+# ---------------------------------------------------------------------------
+
+
+class TestExternalRedirect:
+    def test_renders_self_navigating_page(self):
+        from apps.core.redirects import ExternalRedirect
+
+        url = "https://marketplace.stripe.com/oauth/v2/authorize?client_id=ca_1&state=a"
+
+        response = ExternalRedirect(url)
+
+        assert response.status_code == 200
+        assert response.url == url
+        html = response.content.decode()
+        escaped = url.replace("&", "&amp;")
+        assert f'<meta http-equiv="refresh" content="0;url={escaped}">' in html
+        assert f'<a href="{escaped}">' in html
+        assert response["Cache-Control"] == "no-store"
+        assert response["Referrer-Policy"] == "no-referrer"
+
+    def test_url_is_html_escaped(self):
+        from apps.core.redirects import ExternalRedirect
+
+        response = ExternalRedirect('https://x.test/?a="><script>alert(1)</script>')
+
+        assert b"<script>" not in response.content
+
+    @pytest.mark.parametrize(
+        "url", ["javascript:alert(1)", "data:text/html,x", "//evil.test/", "/local/"]
+    )
+    def test_rejects_non_http_urls(self, url):
+        from apps.core.redirects import ExternalRedirect
+
+        with pytest.raises(ValueError):
+            ExternalRedirect(url)
