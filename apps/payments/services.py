@@ -206,6 +206,8 @@ def _process_event(event, provider, provider_config=None):
         _handle_invoice_finalized(event, provider, provider_config)
     elif event.event_type == StripeEvent.INVOICE_PAID:
         _handle_invoice_paid(event, provider)
+    elif event.event_type == StripeEvent.CREDIT_NOTE_CREATED:
+        _handle_credit_note_created(event, provider_config)
     else:
         logger.info("Unhandled event type: %s", event.event_type)
 
@@ -328,6 +330,73 @@ def import_stripe_invoice(organization, stripe_invoice, provider_config, notify=
     return invoice, True
 
 
+def import_stripe_credit_note(organization, stripe_credit_note, notify=True):
+    """Import a Stripe credit note as a draft FactPulse credit note.
+
+    The credited Stripe invoice must already be in FactPulse (BT-25/BT-26 refer
+    to it); otherwise the credit note is skipped. Returns (credit_note, created),
+    credit_note being None when skipped.
+    notify=False skips the "pending manual validation" e-mail (automatic mode).
+    """
+    from apps.payments.providers.stripe.mapper import stripe_credit_note_to_payload
+
+    credit_note_id = stripe_credit_note.get("id", "")
+
+    # Idempotence
+    existing = Invoice.objects.filter(
+        organization=organization,
+        external_id=credit_note_id,
+        deleted_at__isnull=True,
+    ).first()
+    if existing:
+        logger.info(
+            "Credit note already exists for Stripe credit note %s (uuid=%s), skipping.",
+            credit_note_id,
+            existing.uuid,
+        )
+        return existing, False
+
+    invoice_field = stripe_credit_note.get("invoice")
+    stripe_invoice_id = (
+        invoice_field.get("id")
+        if isinstance(invoice_field, dict)
+        else (invoice_field or "")
+    )
+    original = Invoice.objects.filter(
+        organization=organization,
+        external_id=stripe_invoice_id,
+        deleted_at__isnull=True,
+    ).first()
+    if not stripe_invoice_id or not original:
+        logger.warning(
+            "Stripe credit note %s skipped: credited invoice %s not in FactPulse.",
+            credit_note_id,
+            stripe_invoice_id or "?",
+        )
+        return None, False
+
+    payload = stripe_credit_note_to_payload(
+        stripe_credit_note, original_invoice=original
+    )
+    credit_note, warnings = invoice_service.create_invoice(organization, payload)
+    if warnings:
+        logger.info("Credit note created with warnings: %s", warnings)
+    credit_note.preceding_invoice = original
+    credit_note.save(update_fields=["preceding_invoice", "updated_at"])
+
+    logger.info(
+        "Auto-created draft credit note %s from Stripe credit note %s "
+        "(pending manual validation)",
+        credit_note.uuid,
+        credit_note_id,
+    )
+
+    if notify:
+        _notify_invoice_created(credit_note, organization)
+
+    return credit_note, True
+
+
 def _build_stripe_invoice_payload(organization, stripe_invoice, provider_config):
     """Build the create_invoice payload of a Stripe invoice, linking its customer."""
     from apps.billing.models import Customer
@@ -412,6 +481,11 @@ def _notify_invoice_created(invoice, organization):
         if not recipients:
             return
 
+        from apps.billing.constants import CREDIT_NOTE_TYPE_CODE
+
+        kind = (
+            "Avoir" if invoice.invoice_type_code == CREDIT_NOTE_TYPE_CODE else "Facture"
+        )
         site_url = settings.SITE_URL.rstrip("/")
         invoice_path = reverse("ui:invoice_detail", kwargs={"uuid": invoice.uuid})
 
@@ -437,7 +511,7 @@ def _notify_invoice_created(invoice, organization):
         )
 
         send_mail(
-            subject=f"[FactPulse] Facture Stripe à valider — {organization.name}",
+            subject=f"[FactPulse] {kind} Stripe à valider — {organization.name}",
             message=body,
             from_email=None,
             recipient_list=recipients,
@@ -489,6 +563,16 @@ def _handle_invoice_finalized(event, provider, provider_config):
     organization = provider_config.organization
 
     import_stripe_invoice(organization, stripe_invoice, provider_config)
+
+
+def _handle_credit_note_created(event, provider_config):
+    """Create a draft credit note from a Stripe credit note (refund, cancellation)."""
+    if not provider_config:
+        logger.warning("No provider_config for credit_note.created event, skipping.")
+        return
+
+    stripe_credit_note = event.raw_data.get("data", {}).get("object", {})
+    import_stripe_credit_note(provider_config.organization, stripe_credit_note)
 
 
 def _handle_invoice_paid(event, provider):

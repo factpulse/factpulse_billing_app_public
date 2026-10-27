@@ -5,6 +5,13 @@ Toutes les modifications notables de ce projet sont documentées dans ce fichier
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [1.4.0] — 2026-10-27
+
+### Modifié
+
+- Stripe : les avoirs émis dans Stripe (credit_note.created) sont importés en brouillon, rattachés à la facture d'origine importée (BT-25/BT-26), avec ses parties et son moyen de paiement ; TVA lue dans les deux formats d'API Stripe
+- Stripe : rattrapage quotidien (Celery Beat, 4 h 30) des factures finalisées et des avoirs des 3 derniers jours que les webhooks n'ont pas livrés
+
 ## [1.3.4] — 2026-10-25
 
 ### Modifié

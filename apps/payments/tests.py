@@ -1953,3 +1953,166 @@ class StripeImportRecipientTest(TestCase):
 
         with pytest.raises(ValueError):
             resync_stripe_invoice(invoice, self.provider_config)
+
+
+# --- Stripe credit notes (credit_note.created) ---
+
+
+def _stripe_credit_note(**overrides):
+    data = {
+        "id": "cn_1",
+        "number": "INV-0042-CN-01",
+        "invoice": "in_resync_1",
+        "currency": "eur",
+        "created": 1761000000,
+        "subtotal": 10000,
+        "total": 12000,
+        "tax_amounts": [{"amount": 2000, "inclusive": False, "taxable_amount": 10000}],
+        "lines": {
+            "data": [
+                {
+                    "description": "Abonnement",
+                    "quantity": 1,
+                    "amount": 10000,
+                    "tax_amounts": [
+                        {"amount": 2000, "inclusive": False, "taxable_amount": 10000}
+                    ],
+                }
+            ]
+        },
+    }
+    data.update(overrides)
+    return data
+
+
+@_skip
+class StripeCreditNoteImportTest(TestCase):
+    def setUp(self):
+        from apps.billing.models import Customer
+
+        self.supplier = SupplierFactory()
+        self.org = self.supplier.organization
+        self.provider_config = ProviderConfig.objects.create(
+            organization=self.org,
+            provider="stripe",
+            api_key="sk_test",
+            webhook_secret="whsec_test",
+            default_supplier=self.supplier,
+        )
+        self.customer = Customer.objects.create(
+            organization=self.org, external_id="cus_resync", name="ACME SAS"
+        )
+        self.original = InvoiceFactory(
+            organization=self.org,
+            supplier=self.supplier,
+            customer=self.customer,
+            status="paid",
+            number="INV-0042",
+            external_id="in_resync_1",
+            issue_date="2026-10-01",
+        )
+
+    def _import(self, credit_note):
+        from apps.payments.services import import_stripe_credit_note
+
+        return import_stripe_credit_note(self.org, credit_note)
+
+    def test_credit_note_refers_to_original_invoice(self):
+        credit_note, created = self._import(_stripe_credit_note())
+
+        assert created
+        assert credit_note.status == "draft"
+        assert credit_note.number == "INV-0042-CN-01"
+        assert credit_note.invoice_type_code == "381"
+        assert credit_note.preceding_invoice == self.original
+        assert credit_note.supplier == self.supplier
+        assert credit_note.customer == self.customer
+        refs = credit_note.en16931_data["references"]
+        assert refs["precedingInvoiceReference"] == "INV-0042"
+        assert refs["precedingInvoiceDate"] == "2026-10-01"
+        assert credit_note.total_excl_tax == Decimal("100.00")
+        assert credit_note.total_tax == Decimal("20.00")
+        assert credit_note.total_incl_tax == Decimal("120.00")
+        line = credit_note.en16931_data["invoiceLines"][0]
+        assert line["manualVatRate"] == "20.00"
+        assert line["vatCategory"] == "S"
+
+    def test_post_basil_tax_format(self):
+        taxes = [{"amount": 550, "tax_behavior": "exclusive", "taxable_amount": 10000}]
+        credit_note, _ = self._import(
+            _stripe_credit_note(
+                total=10550,
+                tax_amounts=None,
+                total_taxes=taxes,
+                lines={
+                    "data": [
+                        {
+                            "description": "Livre",
+                            "quantity": 2,
+                            "amount": 10000,
+                            "taxes": taxes,
+                        }
+                    ]
+                },
+            )
+        )
+
+        line = credit_note.en16931_data["invoiceLines"][0]
+        assert line["manualVatRate"] == "5.50"
+        assert line["unitNetPrice"] == "50.00"
+        assert credit_note.total_tax == Decimal("5.50")
+        assert credit_note.total_excl_tax == Decimal("100.00")
+
+    def test_zero_rate_line_keeps_original_exemption(self):
+        self.original.en16931_data["invoiceLines"] = [
+            {
+                "manualVatRate": "0.00",
+                "vatCategory": "E",
+                "exemptionReason": "TVA non applicable, art. 293 B du CGI",
+            }
+        ]
+        self.original.save()
+
+        credit_note, _ = self._import(
+            _stripe_credit_note(
+                total=2900,
+                tax_amounts=[],
+                lines={"data": [{"description": "Starter", "amount": 2900}]},
+            )
+        )
+
+        line = credit_note.en16931_data["invoiceLines"][0]
+        assert line["vatCategory"] == "E"
+        assert line["exemptionReason"] == "TVA non applicable, art. 293 B du CGI"
+
+    def test_skipped_when_original_not_imported(self):
+        credit_note, created = self._import(_stripe_credit_note(invoice="in_unknown"))
+
+        assert credit_note is None
+        assert not created
+
+    def test_import_is_idempotent(self):
+        first, _ = self._import(_stripe_credit_note())
+        again, created = self._import(_stripe_credit_note())
+
+        assert again == first
+        assert not created
+
+    @patch("apps.payments.services.get_adapter")
+    def test_webhook_creates_credit_note(self, mock_get_adapter):
+        mock_adapter = MagicMock()
+        mock_adapter.verify_webhook.return_value = True
+        mock_adapter.parse_webhook.return_value = WebhookEvent(
+            provider_event_id="evt_cn",
+            event_type="credit_note.created",
+            provider_payment_id="cn_1",
+            raw_data={"data": {"object": _stripe_credit_note()}},
+        )
+        mock_get_adapter.return_value = mock_adapter
+
+        handle_webhook("stripe", self.provider_config, {}, b"{}")
+
+        from apps.billing.models import Invoice
+
+        credit_note = Invoice.objects.get(external_id="cn_1")
+        assert credit_note.preceding_invoice == self.original

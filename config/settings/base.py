@@ -3,6 +3,8 @@ import logging
 import os
 from pathlib import Path
 
+from celery.schedules import crontab
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 _DEFAULT_SECRET_KEY = "insecure-dev-key-change-me"  # nosec B105 — sentinel value, never used as actual secret
@@ -165,6 +167,12 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": int(os.environ.get("CDAR_POLL_INTERVAL_SECONDS", "900")),
     },
 }
+if STRIPE_ENABLED:
+    # Stripe invoices and credit notes the webhooks missed (last 3 days)
+    CELERY_BEAT_SCHEDULE["catch-up-stripe-documents"] = {
+        "task": "apps.payments.tasks.catch_up_stripe_documents",
+        "schedule": crontab(hour=4, minute=30),
+    }
 
 # DRF
 REST_FRAMEWORK = {

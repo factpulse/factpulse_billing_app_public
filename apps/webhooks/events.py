@@ -20,3 +20,4 @@ class StripeEvent:
 
     INVOICE_FINALIZED = "invoice.finalized"
     INVOICE_PAID = "invoice.paid"
+    CREDIT_NOTE_CREATED = "credit_note.created"

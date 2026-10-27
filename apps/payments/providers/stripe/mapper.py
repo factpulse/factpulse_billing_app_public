@@ -98,6 +98,138 @@ def stripe_invoice_to_payload(stripe_invoice, *, provider_config, product_map=No
     return payload
 
 
+def stripe_credit_note_to_payload(stripe_credit_note, *, original_invoice):
+    """Convert a Stripe Credit Note dict to a create_invoice payload.
+
+    The credit note (BT-3 = 381) refers to the FactPulse invoice imported from
+    the credited Stripe invoice (BT-25/BT-26), and takes its supplier, customer
+    and payment means. Amounts stay positive, as for FactPulse credit notes.
+    Tax amounts are read from both API formats: ``tax_amounts`` (before
+    2025-03-31) and ``taxes``/``total_taxes`` (after).
+    """
+    from apps.billing.constants import CREDIT_NOTE_TYPE_CODE
+
+    original_data = original_invoice.en16931_data or {}
+    original_refs = original_data.get("references", {})
+    currency = (stripe_credit_note.get("currency") or "eur").upper()
+    issue_date = _ts_to_date(
+        stripe_credit_note.get("effective_at") or stripe_credit_note.get("created")
+    )
+
+    total = _cents_to_decimal(stripe_credit_note.get("total", 0))
+    tax = _cents_to_decimal(
+        _sum_tax_amounts(
+            stripe_credit_note.get("total_taxes")
+            or stripe_credit_note.get("tax_amounts")
+        )
+    )
+
+    references = {
+        "invoiceType": CREDIT_NOTE_TYPE_CODE,
+        "issueDate": (issue_date or date.today()).isoformat(),
+        "invoiceCurrency": currency,
+        "paymentMeans": original_refs.get("paymentMeans", "VIREMENT"),
+    }
+    # BT-25 / BT-26 — required by BR-FR-CO-05 for credit notes
+    if original_invoice.number:
+        references["precedingInvoiceReference"] = original_invoice.number
+    if original_invoice.issue_date:
+        references["precedingInvoiceDate"] = str(original_invoice.issue_date)
+
+    en16931_data = {
+        "references": references,
+        "invoiceLines": _map_credit_note_lines(
+            (stripe_credit_note.get("lines") or {}).get("data", []),
+            original_lines=original_data.get("invoiceLines", []),
+        ),
+        "totals": {
+            "totalNetAmount": str(total - tax),
+            "vatAmount": str(tax),
+            "totalGrossAmount": str(total),
+            "amountDue": str(total),
+        },
+    }
+
+    payload = {
+        "en16931_data": en16931_data,
+        "external_id": stripe_credit_note.get("id", ""),
+        # Stripe numbers credit notes itself (e.g. "INV-0001-CN-01")
+        "number": stripe_credit_note.get("number") or "",
+        "is_internal": True,
+    }
+    if original_invoice.supplier_id:
+        payload["supplier_id"] = str(original_invoice.supplier.uuid)
+    if original_invoice.customer_id:
+        payload["customer_id"] = str(original_invoice.customer.uuid)
+    elif original_data.get("recipient"):
+        en16931_data["recipient"] = original_data["recipient"]
+    return payload
+
+
+def _map_credit_note_lines(stripe_lines, original_lines=()):
+    """Convert Stripe credit note lines to en16931 invoiceLines.
+
+    The VAT rate is derived from the line tax amounts. When the credited
+    invoice has a line at the same rate, its VAT category and exemption are
+    reused so the credit note mirrors the invoice.
+    """
+    lines = []
+    for i, item in enumerate(stripe_lines, start=1):
+        quantity = item.get("quantity") or 1
+        taxes = item.get("taxes") or item.get("tax_amounts") or []
+        amount = _cents_to_decimal(
+            (item.get("amount") or 0)
+            - _sum_discounts(item)
+            - _sum_tax_amounts(taxes, inclusive_only=True)
+        )
+        vat_rate = _credit_note_line_rate(item, taxes)
+
+        line = {
+            "lineNumber": i,
+            "itemName": item.get("description") or f"Stripe item #{i}",
+            "quantity": str(quantity),
+            "unitNetPrice": str(amount / Decimal(str(quantity))),
+            "lineNetAmount": str(amount),
+            "manualVatRate": vat_rate,
+            "vatCategory": "S" if Decimal(vat_rate) > 0 else "Z",
+        }
+        for original in original_lines:
+            if Decimal(str(original.get("manualVatRate") or 0)) == Decimal(vat_rate):
+                for key in ("vatCategory", "exemptionReason", "vatexCode"):
+                    if original.get(key):
+                        line[key] = original[key]
+                break
+        lines.append(line)
+    return lines
+
+
+def _credit_note_line_rate(item, taxes):
+    """VAT rate of a credit note line, as a "20.00" string."""
+    for tax_rate in item.get("tax_rates") or []:
+        if isinstance(tax_rate, dict) and tax_rate.get("percentage") is not None:
+            return str(Decimal(str(tax_rate["percentage"])).quantize(Decimal("0.01")))
+    tax = _sum_tax_amounts(taxes)
+    taxable = sum((t.get("taxable_amount") or 0) for t in taxes)
+    if not tax or not taxable:
+        return "0.00"
+    return str((Decimal(tax) * 100 / Decimal(taxable)).quantize(Decimal("0.01")))
+
+
+def _sum_tax_amounts(taxes, inclusive_only=False):
+    """Sum Stripe tax amounts (cents), old ``inclusive`` or new ``tax_behavior``."""
+    total = 0
+    for tax in taxes or []:
+        inclusive = tax.get("inclusive") or tax.get("tax_behavior") == "inclusive"
+        if inclusive_only and not inclusive:
+            continue
+        total += tax.get("amount") or 0
+    return total
+
+
+def _sum_discounts(item):
+    return sum((d.get("amount") or 0) for d in item.get("discount_amounts") or [])
+
+
 def _map_line_items(stripe_lines, product_map=None):
     """Convert Stripe line items to en16931 invoiceLines.
 
